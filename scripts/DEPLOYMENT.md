@@ -108,8 +108,6 @@ The `build-release` CI job only runs on a **GitHub Release** (tag push). PRs and
 
 ---
 
----
-
 ## AWS cloud deployment (CDK)
 
 Infrastructure is defined in `infrastructure/cdk/` as AWS CDK v2 C# — two stacks deployed to `ap-south-1` (Mumbai).
@@ -213,10 +211,48 @@ Required GitHub Secrets for AWS deployment:
 
 | Secret | Value |
 |--------|-------|
-| `AWS_ACCESS_KEY_ID` | IAM user/role access key |
-| `AWS_SECRET_ACCESS_KEY` | IAM user/role secret key |
+| `AWS_ACCESS_KEY_ID` | `finpal-cdk-deployer` IAM user access key |
+| `AWS_SECRET_ACCESS_KEY` | `finpal-cdk-deployer` IAM user secret key |
+| `AWS_ACCOUNT_ID` | `018535004303` |
 
-> **Security note:** Use an IAM role with least-privilege CDK permissions, not root credentials. See [CDK bootstrap permissions](https://docs.aws.amazon.com/cdk/v2/guide/bootstrapping-env.html).
+### IAM deployer — least-privilege setup
+
+CI credentials belong to the **`finpal-cdk-deployer`** IAM user:
+
+```
+ARN: arn:aws:iam::018535004303:user/finpal-cdk-deployer
+```
+
+The user has a single inline policy (`FinpalCdkDeployPolicy`) with **only `sts:AssumeRole`** on the three CDK bootstrap roles. No direct resource permissions are granted to the user.
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "AssumeBootstrappedCdkRoles",
+      "Effect": "Allow",
+      "Action": "sts:AssumeRole",
+      "Resource": [
+        "arn:aws:iam::018535004303:role/cdk-hnb659fds-deploy-role-018535004303-ap-south-1",
+        "arn:aws:iam::018535004303:role/cdk-hnb659fds-file-publishing-role-018535004303-ap-south-1",
+        "arn:aws:iam::018535004303:role/cdk-hnb659fds-lookup-role-018535004303-ap-south-1"
+      ]
+    }
+  ]
+}
+```
+
+**Why this works:** CDK bootstrap creates scoped execution roles in the account. The CI user assumes the deploy role → CDK assumes the cfn-exec role → CloudFormation creates/updates resources. Resource-creation permissions (Cognito, DynamoDB, API Gateway, S3, CloudFront, SSM) live inside the cfn-exec role, not in the CI user.
+
+**Key rotation:** Rotate the `finpal-cdk-deployer` access key every 90 days. To rotate:
+```bash
+aws iam create-access-key --user-name finpal-cdk-deployer
+# update GitHub Secrets AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY
+aws iam delete-access-key --user-name finpal-cdk-deployer --access-key-id <old-key-id>
+```
+
+See [CDK bootstrap permissions](https://docs.aws.amazon.com/cdk/v2/guide/bootstrapping-env.html) for the full bootstrap role trust model.
 
 ---
 
