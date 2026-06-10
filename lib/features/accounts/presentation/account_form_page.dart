@@ -37,11 +37,13 @@ class _AccountFormPageState extends ConsumerState<AccountFormPage> {
     });
     try {
       final create = ref.read(createAccountProvider);
-      await create(CreateAccountParams(
-        name: _nameController.text.trim(),
-        type: _type,
-        openingBalanceMajor: _openingBalance,
-      ));
+      await create(
+        CreateAccountParams(
+          name: _nameController.text.trim(),
+          type: _type,
+          openingBalanceMajor: _openingBalance,
+        ),
+      );
       if (mounted) context.pop();
     } on ArgumentError catch (e) {
       setState(() => _error = e.message.toString());
@@ -88,10 +90,7 @@ class _AccountFormPageState extends ConsumerState<AccountFormPage> {
                   border: OutlineInputBorder(),
                 ),
                 items: AccountType.values.map((t) {
-                  return DropdownMenuItem(
-                    value: t,
-                    child: Text(_typeLabel(t)),
-                  );
+                  return DropdownMenuItem(value: t, child: Text(_typeLabel(t)));
                 }).toList(),
                 onChanged: (v) => setState(() => _type = v!),
               ),
@@ -103,8 +102,7 @@ class _AccountFormPageState extends ConsumerState<AccountFormPage> {
               ),
               if (_error != null) ...[
                 const SizedBox(height: 12),
-                Text(_error!,
-                    style: TextStyle(color: theme.colorScheme.error)),
+                Text(_error!, style: TextStyle(color: theme.colorScheme.error)),
               ],
               const SizedBox(height: 24),
               FilledButton(
@@ -113,7 +111,8 @@ class _AccountFormPageState extends ConsumerState<AccountFormPage> {
                     ? const SizedBox(
                         height: 20,
                         width: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2))
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
                     : const Text('Save Account'),
               ),
             ],
@@ -124,10 +123,10 @@ class _AccountFormPageState extends ConsumerState<AccountFormPage> {
   }
 
   String _typeLabel(AccountType t) => switch (t) {
-        AccountType.cash => 'Cash',
-        AccountType.bank => 'Bank Account',
-        AccountType.savings => 'Savings',
-        AccountType.creditCard => 'Credit Card',
-        AccountType.investment => 'Investment',
-      };
+    AccountType.cash => 'Cash',
+    AccountType.bank => 'Bank Account',
+    AccountType.savings => 'Savings',
+    AccountType.creditCard => 'Credit Card',
+    AccountType.investment => 'Investment',
+  };
 }

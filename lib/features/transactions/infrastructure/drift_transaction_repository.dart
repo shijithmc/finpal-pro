@@ -12,11 +12,15 @@ final class DriftTransactionRepository implements ITransactionRepository {
   @override
   Stream<List<FinTransaction>> watchByDateRange(DateTime from, DateTime to) {
     return (_db.select(_db.transactions)
-          ..where((t) =>
-              t.transactionDate.isBiggerOrEqualValue(
-                  from.toIso8601String().substring(0, 10)) &
-              t.transactionDate.isSmallerOrEqualValue(
-                  to.toIso8601String().substring(0, 10)))
+          ..where(
+            (t) =>
+                t.transactionDate.isBiggerOrEqualValue(
+                  from.toIso8601String().substring(0, 10),
+                ) &
+                t.transactionDate.isSmallerOrEqualValue(
+                  to.toIso8601String().substring(0, 10),
+                ),
+          )
           ..orderBy([(t) => OrderingTerm.desc(t.transactionDate)]))
         .watch()
         .map((rows) => rows.map(FinTransaction.fromData).toList());
@@ -40,9 +44,9 @@ final class DriftTransactionRepository implements ITransactionRepository {
 
   @override
   Future<FinTransaction?> findById(String id) async {
-    final row = await (_db.select(_db.transactions)
-          ..where((t) => t.id.equals(id)))
-        .getSingleOrNull();
+    final row = await (_db.select(
+      _db.transactions,
+    )..where((t) => t.id.equals(id))).getSingleOrNull();
     return row == null ? null : FinTransaction.fromData(row);
   }
 
@@ -57,8 +61,9 @@ final class DriftTransactionRepository implements ITransactionRepository {
 
   @override
   Future<void> update(String id, TransactionsCompanion companion) async {
-    await (_db.update(_db.transactions)..where((t) => t.id.equals(id)))
-        .write(companion);
+    await (_db.update(
+      _db.transactions,
+    )..where((t) => t.id.equals(id))).write(companion);
   }
 
   @override
@@ -68,7 +73,8 @@ final class DriftTransactionRepository implements ITransactionRepository {
 
   @override
   Future<void> toggleBookmark(String id, bool bookmarked) async {
-    await (_db.update(_db.transactions)..where((t) => t.id.equals(id)))
-        .write(TransactionsCompanion(isBookmarked: Value(bookmarked)));
+    await (_db.update(_db.transactions)..where((t) => t.id.equals(id))).write(
+      TransactionsCompanion(isBookmarked: Value(bookmarked)),
+    );
   }
 }

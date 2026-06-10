@@ -5,8 +5,9 @@
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  testWidgets('placeholder — full integration test pending Sprint 2',
-      (WidgetTester tester) async {
+  testWidgets('placeholder — full integration test pending Sprint 2', (
+    WidgetTester tester,
+  ) async {
     expect(1, 1);
   });
 }

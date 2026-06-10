@@ -20,8 +20,7 @@ class _LockScreenPageState extends ConsumerState<LockScreenPage> {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance
-        .addPostFrameCallback((_) => _tryBiometric());
+    WidgetsBinding.instance.addPostFrameCallback((_) => _tryBiometric());
   }
 
   Future<void> _tryBiometric() async {
@@ -170,16 +169,15 @@ class _NumericPad extends StatelessWidget {
         ...rows.map(
           (row) => Row(
             mainAxisAlignment: MainAxisAlignment.center,
-            children: row.map((d) => _PadButton(label: d, onTap: () => onDigit(d))).toList(),
+            children: row
+                .map((d) => _PadButton(label: d, onTap: () => onDigit(d)))
+                .toList(),
           ),
         ),
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            _PadButton(
-              icon: Icons.fingerprint,
-              onTap: onBiometric,
-            ),
+            _PadButton(icon: Icons.fingerprint, onTap: onBiometric),
             _PadButton(label: '0', onTap: () => onDigit('0')),
             _PadButton(icon: Icons.backspace_outlined, onTap: onBackspace),
           ],

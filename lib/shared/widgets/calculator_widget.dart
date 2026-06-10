@@ -125,7 +125,9 @@ class _CalculatorWidgetState extends State<CalculatorWidget> {
                 childAspectRatio: 1.4,
               ),
               itemCount: _buttonLabels.fold<int>(
-                  0, (sum, row) => sum + row.length),
+                0,
+                (sum, row) => sum + row.length,
+              ),
               itemBuilder: (ctx, index) {
                 final row = index ~/ 4;
                 final col = index % 4;

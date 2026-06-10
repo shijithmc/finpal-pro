@@ -9,11 +9,7 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
 
-  runApp(
-    const ProviderScope(
-      child: FinPalProApp(),
-    ),
-  );
+  runApp(const ProviderScope(child: FinPalProApp()));
 }
 
 class FinPalProApp extends ConsumerWidget {

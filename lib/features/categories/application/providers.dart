@@ -22,13 +22,9 @@ final categoriesTreeProvider = StreamProvider<List<Category>>((ref) {
 });
 
 final expenseCategoriesProvider = FutureProvider<List<Category>>((ref) {
-  return ref
-      .read(categoryRepositoryProvider)
-      .findByType(CategoryType.expense);
+  return ref.read(categoryRepositoryProvider).findByType(CategoryType.expense);
 });
 
 final incomeCategoriesProvider = FutureProvider<List<Category>>((ref) {
-  return ref
-      .read(categoryRepositoryProvider)
-      .findByType(CategoryType.income);
+  return ref.read(categoryRepositoryProvider).findByType(CategoryType.income);
 });

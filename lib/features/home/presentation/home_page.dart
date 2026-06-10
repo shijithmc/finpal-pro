@@ -178,18 +178,14 @@ class _DashboardTab extends ConsumerWidget {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text('Recent', style: theme.textTheme.titleMedium),
-              TextButton(
-                onPressed: () {},
-                child: const Text('See all'),
-              ),
+              TextButton(onPressed: () {}, child: const Text('See all')),
             ],
           ),
           txAsync.when(
             loading: () => const SizedBox.shrink(),
             error: (_, _) => const SizedBox.shrink(),
-            data: (txList) => TransactionListView(
-              transactions: txList.take(5).toList(),
-            ),
+            data: (txList) =>
+                TransactionListView(transactions: txList.take(5).toList()),
           ),
         ],
       ),

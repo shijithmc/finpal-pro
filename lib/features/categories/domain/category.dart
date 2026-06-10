@@ -41,8 +41,16 @@ final class Category extends Equatable {
   bool get isRoot => parentId == null;
 
   @override
-  List<Object?> get props =>
-      [id, name, parentId, type, iconCode, colorHex, isSystem, sortOrder];
+  List<Object?> get props => [
+    id,
+    name,
+    parentId,
+    type,
+    iconCode,
+    colorHex,
+    isSystem,
+    sortOrder,
+  ];
 }
 
 /// Builds a tree from a flat list of categories.

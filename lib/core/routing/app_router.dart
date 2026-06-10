@@ -26,14 +26,8 @@ final routerProvider = Provider<GoRouter>((ref) {
       return null;
     },
     routes: [
-      GoRoute(
-        path: '/',
-        builder: (_, _) => const HomePage(),
-      ),
-      GoRoute(
-        path: '/lock',
-        builder: (_, _) => const LockScreenPage(),
-      ),
+      GoRoute(path: '/', builder: (_, _) => const HomePage()),
+      GoRoute(path: '/lock', builder: (_, _) => const LockScreenPage()),
       GoRoute(
         path: '/setup',
         builder: (ctx, _) => SetupPinPage(
@@ -56,14 +50,8 @@ final routerProvider = Provider<GoRouter>((ref) {
         builder: (_, state) =>
             AccountFormPage(accountId: state.pathParameters['id']),
       ),
-      GoRoute(
-        path: '/search',
-        builder: (_, _) => const _SearchPage(),
-      ),
-      GoRoute(
-        path: '/settings',
-        builder: (_, _) => const _SettingsPage(),
-      ),
+      GoRoute(path: '/search', builder: (_, _) => const _SearchPage()),
+      GoRoute(path: '/settings', builder: (_, _) => const _SettingsPage()),
     ],
   );
 });
@@ -73,9 +61,9 @@ class _SearchPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-        appBar: AppBar(title: const Text('Search')),
-        body: const Center(child: Text('Search — Sprint 3 (PBI-013)')),
-      );
+    appBar: AppBar(title: const Text('Search')),
+    body: const Center(child: Text('Search — Sprint 3 (PBI-013)')),
+  );
 }
 
 class _SettingsPage extends StatelessWidget {
@@ -83,7 +71,7 @@ class _SettingsPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-        appBar: AppBar(title: const Text('Settings')),
-        body: const Center(child: Text('Settings')),
-      );
+    appBar: AppBar(title: const Text('Settings')),
+    body: const Center(child: Text('Settings')),
+  );
 }

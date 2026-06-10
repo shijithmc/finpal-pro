@@ -21,8 +21,10 @@ class Accounts extends Table {
   TextColumn get name => text().withLength(min: 1, max: 50)();
   TextColumn get type => textEnum<AccountType>()();
   TextColumn get currency => text().withDefault(const Constant('INR'))();
+
   /// Amount in smallest currency unit (paise for INR). Always ≥ 0 for assets.
   IntColumn get openingBalance => integer().withDefault(const Constant(0))();
+
   /// Maintained by transaction writes — never compute from transaction history.
   IntColumn get currentBalance => integer().withDefault(const Constant(0))();
   BoolColumn get isArchived => boolean().withDefault(const Constant(false))();
@@ -37,14 +39,13 @@ class Accounts extends Table {
 class Categories extends Table {
   TextColumn get id => text()();
   TextColumn get name => text().withLength(min: 1, max: 50)();
+
   /// Null = root category. Non-null = sub-category (PBI-011).
-  TextColumn get parentId =>
-      text().nullable().references(Categories, #id)();
+  TextColumn get parentId => text().nullable().references(Categories, #id)();
   TextColumn get type => textEnum<CategoryType>()();
   IntColumn get iconCode => integer().nullable()();
   TextColumn get colorHex => text().nullable()();
-  BoolColumn get isSystem =>
-      boolean().withDefault(const Constant(false))();
+  BoolColumn get isSystem => boolean().withDefault(const Constant(false))();
   IntColumn get sortOrder => integer().withDefault(const Constant(0))();
 
   @override
@@ -55,23 +56,23 @@ class Categories extends Table {
 class Transactions extends Table {
   TextColumn get id => text()();
   TextColumn get type => textEnum<TransactionType>()();
+
   /// Amount in smallest currency unit (paise). Always > 0.
   IntColumn get amount => integer()();
+
   /// Account whose balance decreases (expense) or is the source (transfer).
-  TextColumn get debitAccountId =>
-      text().references(Accounts, #id)();
+  TextColumn get debitAccountId => text().references(Accounts, #id)();
+
   /// Account whose balance increases (income) or is the destination (transfer).
-  TextColumn get creditAccountId =>
-      text().references(Accounts, #id)();
-  TextColumn get categoryId =>
-      text().nullable().references(Categories, #id)();
+  TextColumn get creditAccountId => text().references(Accounts, #id)();
+  TextColumn get categoryId => text().nullable().references(Categories, #id)();
   TextColumn get description =>
       text().withLength(min: 0, max: 255).withDefault(const Constant(''))();
   TextColumn get notes => text().withLength(min: 0, max: 1000).nullable()();
   TextColumn get transactionDate => text()(); // ISO-8601 date
   TextColumn get createdAt => text()();
-  BoolColumn get isBookmarked =>
-      boolean().withDefault(const Constant(false))();
+  BoolColumn get isBookmarked => boolean().withDefault(const Constant(false))();
+
   /// Populated in Sprint 5 (PBI-015).
   TextColumn get receiptImagePath => text().nullable()();
 
@@ -81,8 +82,7 @@ class Transactions extends Table {
 
 @DataClassName('MonthlyAggregateData')
 class MonthlyAggregates extends Table {
-  TextColumn get accountId =>
-      text().references(Accounts, #id)();
+  TextColumn get accountId => text().references(Accounts, #id)();
   IntColumn get year => integer()();
   IntColumn get month => integer()(); // 1–12
   IntColumn get totalIncome => integer().withDefault(const Constant(0))();
@@ -101,8 +101,7 @@ class SecurityConfigs extends Table {
       boolean().withDefault(const Constant(false))();
   BoolColumn get lockOnBackground =>
       boolean().withDefault(const Constant(true))();
-  IntColumn get lockDelaySeconds =>
-      integer().withDefault(const Constant(0))();
+  IntColumn get lockDelaySeconds => integer().withDefault(const Constant(0))();
 
   @override
   Set<Column> get primaryKey => {id};
@@ -142,39 +141,37 @@ class AppDatabase extends _$AppDatabase {
     TransactionsCompanion tx,
     String debitAccountId,
     String creditAccountId,
-  ) =>
-      transaction(() async {
-        await into(transactions).insert(tx);
+  ) => transaction(() async {
+    await into(transactions).insert(tx);
 
-        final amount = tx.amount.value;
-        final date = DateTime.parse(tx.transactionDate.value);
+    final amount = tx.amount.value;
+    final date = DateTime.parse(tx.transactionDate.value);
 
-        // Debit account: balance decreases by amount
-        await (update(accounts)
-              ..where((a) => a.id.equals(debitAccountId)))
-            .write(AccountsCompanion.custom(
-          currentBalance: accounts.currentBalance - Variable(amount),
-        ));
+    // Debit account: balance decreases by amount
+    await (update(accounts)..where((a) => a.id.equals(debitAccountId))).write(
+      AccountsCompanion.custom(
+        currentBalance: accounts.currentBalance - Variable(amount),
+      ),
+    );
 
-        // Credit account: balance increases by amount
-        await (update(accounts)
-              ..where((a) => a.id.equals(creditAccountId)))
-            .write(AccountsCompanion.custom(
-          currentBalance: accounts.currentBalance + Variable(amount),
-        ));
+    // Credit account: balance increases by amount
+    await (update(accounts)..where((a) => a.id.equals(creditAccountId))).write(
+      AccountsCompanion.custom(
+        currentBalance: accounts.currentBalance + Variable(amount),
+      ),
+    );
 
-        // Pre-compute monthly aggregates
-        await _upsertMonthlyAggregates(
-          debitAccountId: debitAccountId,
-          creditAccountId: creditAccountId,
-          amount: amount,
-          txType: tx.type.value,
-          year: date.year,
-          month: date.month,
-        );
-
-      });
-      // FTS5 is kept in sync by the transactions_ai trigger in createFtsSchema().
+    // Pre-compute monthly aggregates
+    await _upsertMonthlyAggregates(
+      debitAccountId: debitAccountId,
+      creditAccountId: creditAccountId,
+      amount: amount,
+      txType: tx.type.value,
+      year: date.year,
+      month: date.month,
+    );
+  });
+  // FTS5 is kept in sync by the transactions_ai trigger in createFtsSchema().
 
   Future<void> _upsertMonthlyAggregates({
     required String debitAccountId,
@@ -202,31 +199,38 @@ class AppDatabase extends _$AppDatabase {
     int income = 0,
     int expense = 0,
   }) async {
-    final existing = await (select(monthlyAggregates)
-          ..where((m) =>
-              m.accountId.equals(accountId) &
-              m.year.equals(year) &
-              m.month.equals(month)))
-        .getSingleOrNull();
+    final existing =
+        await (select(monthlyAggregates)..where(
+              (m) =>
+                  m.accountId.equals(accountId) &
+                  m.year.equals(year) &
+                  m.month.equals(month),
+            ))
+            .getSingleOrNull();
 
     if (existing == null) {
-      await into(monthlyAggregates).insert(MonthlyAggregatesCompanion.insert(
-        accountId: accountId,
-        year: year,
-        month: month,
-        totalIncome: Value(income),
-        totalExpense: Value(expense),
-      ));
+      await into(monthlyAggregates).insert(
+        MonthlyAggregatesCompanion.insert(
+          accountId: accountId,
+          year: year,
+          month: month,
+          totalIncome: Value(income),
+          totalExpense: Value(expense),
+        ),
+      );
     } else {
-      await (update(monthlyAggregates)
-            ..where((m) =>
+      await (update(monthlyAggregates)..where(
+            (m) =>
                 m.accountId.equals(accountId) &
                 m.year.equals(year) &
-                m.month.equals(month)))
-          .write(MonthlyAggregatesCompanion(
-        totalIncome: Value(existing.totalIncome + income),
-        totalExpense: Value(existing.totalExpense + expense),
-      ));
+                m.month.equals(month),
+          ))
+          .write(
+            MonthlyAggregatesCompanion(
+              totalIncome: Value(existing.totalIncome + income),
+              totalExpense: Value(existing.totalExpense + expense),
+            ),
+          );
     }
   }
 

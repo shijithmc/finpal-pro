@@ -21,9 +21,9 @@ final class DriftAccountRepository implements IAccountRepository {
 
   @override
   Future<Account?> findById(String id) async {
-    final row = await (_db.select(_db.accounts)
-          ..where((a) => a.id.equals(id)))
-        .getSingleOrNull();
+    final row = await (_db.select(
+      _db.accounts,
+    )..where((a) => a.id.equals(id))).getSingleOrNull();
     return row == null ? null : Account.fromData(row);
   }
 
@@ -33,9 +33,7 @@ final class DriftAccountRepository implements IAccountRepository {
     final query = _db.selectOnly(_db.accounts)
       ..addColumns([countExpr])
       ..where(_db.accounts.isArchived.equals(false));
-    return query
-        .map((r) => r.read(countExpr)!)
-        .getSingle();
+    return query.map((r) => r.read(countExpr)!).getSingle();
   }
 
   @override
@@ -46,11 +44,13 @@ final class DriftAccountRepository implements IAccountRepository {
     }
 
     final name = companion.name.value;
-    final existing = await (_db.select(_db.accounts)
-          ..where((a) =>
-              a.name.lower().equals(name.toLowerCase()) &
-              a.isArchived.equals(false)))
-        .getSingleOrNull();
+    final existing =
+        await (_db.select(_db.accounts)..where(
+              (a) =>
+                  a.name.lower().equals(name.toLowerCase()) &
+                  a.isArchived.equals(false),
+            ))
+            .getSingleOrNull();
     if (existing != null) {
       throw DuplicateAccountNameException(name);
     }
@@ -62,24 +62,28 @@ final class DriftAccountRepository implements IAccountRepository {
   Future<void> update(String id, AccountsCompanion companion) async {
     if (companion.name.present) {
       final name = companion.name.value;
-      final existing = await (_db.select(_db.accounts)
-            ..where((a) =>
-                a.name.lower().equals(name.toLowerCase()) &
-                a.isArchived.equals(false) &
-                a.id.isNotValue(id)))
-          .getSingleOrNull();
+      final existing =
+          await (_db.select(_db.accounts)..where(
+                (a) =>
+                    a.name.lower().equals(name.toLowerCase()) &
+                    a.isArchived.equals(false) &
+                    a.id.isNotValue(id),
+              ))
+              .getSingleOrNull();
       if (existing != null) {
         throw DuplicateAccountNameException(name);
       }
     }
 
-    await (_db.update(_db.accounts)..where((a) => a.id.equals(id)))
-        .write(companion);
+    await (_db.update(
+      _db.accounts,
+    )..where((a) => a.id.equals(id))).write(companion);
   }
 
   @override
   Future<void> archive(String id) async {
-    await (_db.update(_db.accounts)..where((a) => a.id.equals(id)))
-        .write(const AccountsCompanion(isArchived: Value(true)));
+    await (_db.update(_db.accounts)..where((a) => a.id.equals(id))).write(
+      const AccountsCompanion(isArchived: Value(true)),
+    );
   }
 }

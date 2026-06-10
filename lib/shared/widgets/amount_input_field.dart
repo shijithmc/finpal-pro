@@ -45,8 +45,9 @@ class _AmountInputFieldState extends State<AmountInputField> {
 
   void _onCalcResult(double value) {
     setState(() {
-      _controller.text =
-          value % 1 == 0 ? value.toStringAsFixed(0) : value.toStringAsFixed(2);
+      _controller.text = value % 1 == 0
+          ? value.toStringAsFixed(0)
+          : value.toStringAsFixed(2);
       _showCalc = false;
     });
     widget.onChanged(value);
@@ -59,8 +60,7 @@ class _AmountInputFieldState extends State<AmountInputField> {
       children: [
         TextFormField(
           controller: _controller,
-          keyboardType:
-              const TextInputType.numberWithOptions(decimal: true),
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
           inputFormatters: [
             FilteringTextInputFormatter.allow(RegExp(r'[0-9.]')),
           ],
@@ -70,8 +70,7 @@ class _AmountInputFieldState extends State<AmountInputField> {
             suffixIcon: IconButton(
               icon: const Icon(Icons.calculate_outlined),
               tooltip: 'Open calculator',
-              onPressed: () =>
-                  setState(() => _showCalc = !_showCalc),
+              onPressed: () => setState(() => _showCalc = !_showCalc),
             ),
             border: const OutlineInputBorder(),
           ),

@@ -32,10 +32,14 @@ final class Account extends Equatable {
       id: data.id,
       name: data.name,
       type: data.type,
-      openingBalance:
-          Money(subunits: data.openingBalance, currencyCode: data.currency),
-      currentBalance:
-          Money(subunits: data.currentBalance, currencyCode: data.currency),
+      openingBalance: Money(
+        subunits: data.openingBalance,
+        currencyCode: data.currency,
+      ),
+      currentBalance: Money(
+        subunits: data.currentBalance,
+        currencyCode: data.currency,
+      ),
       isArchived: data.isArchived,
       sortOrder: data.sortOrder,
       createdAt: DateTime.parse(data.createdAt),
@@ -72,6 +76,13 @@ final class Account extends Equatable {
   }
 
   @override
-  List<Object?> get props =>
-      [id, name, type, openingBalance, currentBalance, isArchived, sortOrder];
+  List<Object?> get props => [
+    id,
+    name,
+    type,
+    openingBalance,
+    currentBalance,
+    isArchived,
+    sortOrder,
+  ];
 }

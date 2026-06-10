@@ -58,8 +58,7 @@ final class FinTransaction extends Equatable {
     required TransactionType type,
   }) {
     if (amountSubunits <= 0) return 'Amount must be greater than zero';
-    if (type == TransactionType.transfer &&
-        debitAccountId == creditAccountId) {
+    if (type == TransactionType.transfer && debitAccountId == creditAccountId) {
       return 'Transfer source and destination accounts must differ';
     }
     return null;
@@ -67,14 +66,14 @@ final class FinTransaction extends Equatable {
 
   @override
   List<Object?> get props => [
-        id,
-        type,
-        amount,
-        debitAccountId,
-        creditAccountId,
-        categoryId,
-        description,
-        transactionDate,
-        isBookmarked,
-      ];
+    id,
+    type,
+    amount,
+    debitAccountId,
+    creditAccountId,
+    categoryId,
+    description,
+    transactionDate,
+    isBookmarked,
+  ];
 }

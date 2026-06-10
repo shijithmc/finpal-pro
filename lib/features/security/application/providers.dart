@@ -8,8 +8,9 @@ final securityServiceProvider = Provider<ISecurityService>((ref) {
   return BiometricSecurityService(db: ref.read(appDatabaseProvider));
 });
 
-final securityConfigProvider =
-    FutureProvider<SecurityConfigSnapshot>((ref) async {
+final securityConfigProvider = FutureProvider<SecurityConfigSnapshot>((
+  ref,
+) async {
   return ref.read(securityServiceProvider).readConfig();
 });
 
@@ -17,7 +18,6 @@ final securityConfigProvider =
 final appLockedProvider = StateProvider<bool>((ref) => true);
 
 final isSetupCompleteProvider = FutureProvider<bool>((ref) async {
-  final config =
-      await ref.read(securityServiceProvider).readConfig();
+  final config = await ref.read(securityServiceProvider).readConfig();
   return config.hasPinConfigured;
 });

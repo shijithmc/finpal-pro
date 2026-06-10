@@ -53,12 +53,16 @@ class CategoryPickerWidget extends ConsumerWidget {
   }
 
   Iterable<Widget> _buildItems(
-      Category cat, int depth, BuildContext context) sync* {
+    Category cat,
+    int depth,
+    BuildContext context,
+  ) sync* {
     yield ListTile(
-      contentPadding:
-          EdgeInsets.only(left: 16.0 + depth * 20, right: 16),
+      contentPadding: EdgeInsets.only(left: 16.0 + depth * 20, right: 16),
       leading: Icon(
-        cat.iconCode != null ? IconData(cat.iconCode!, fontFamily: 'MaterialIcons') : Icons.label_outline,
+        cat.iconCode != null
+            ? IconData(cat.iconCode!, fontFamily: 'MaterialIcons')
+            : Icons.label_outline,
       ),
       title: Text(cat.name),
       selected: selectedId == cat.id,

@@ -101,8 +101,7 @@ class _SetupPinPageState extends ConsumerState<SetupPinPage> {
               ),
               if (_error != null) ...[
                 const SizedBox(height: 8),
-                Text(_error!,
-                    style: TextStyle(color: theme.colorScheme.error)),
+                Text(_error!, style: TextStyle(color: theme.colorScheme.error)),
               ],
               const SizedBox(height: 24),
               FilledButton(

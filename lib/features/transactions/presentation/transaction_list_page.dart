@@ -50,8 +50,10 @@ class _MonthSelector extends ConsumerWidget {
           IconButton(
             icon: const Icon(Icons.chevron_left),
             onPressed: () {
-              ref.read(selectedMonthProvider.notifier).state =
-                  DateTime(current.year, current.month - 1);
+              ref.read(selectedMonthProvider.notifier).state = DateTime(
+                current.year,
+                current.month - 1,
+              );
             },
           ),
           Text(
@@ -63,8 +65,10 @@ class _MonthSelector extends ConsumerWidget {
             onPressed: current.isSameMonth(DateTime.now())
                 ? null
                 : () {
-                    ref.read(selectedMonthProvider.notifier).state =
-                        DateTime(current.year, current.month + 1);
+                    ref.read(selectedMonthProvider.notifier).state = DateTime(
+                      current.year,
+                      current.month + 1,
+                    );
                   },
           ),
         ],
@@ -82,8 +86,11 @@ class _EmptyTransactionsState extends StatelessWidget {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.receipt_long_outlined,
-              size: 64, color: Theme.of(context).colorScheme.outline),
+          Icon(
+            Icons.receipt_long_outlined,
+            size: 64,
+            color: Theme.of(context).colorScheme.outline,
+          ),
           const SizedBox(height: 16),
           const Text('No transactions this month'),
           const SizedBox(height: 8),
@@ -132,8 +139,10 @@ class _TransactionTile extends ConsumerWidget {
         color: theme.colorScheme.errorContainer,
         alignment: Alignment.centerRight,
         padding: const EdgeInsets.only(right: 16),
-        child:
-            Icon(Icons.delete_outline, color: theme.colorScheme.onErrorContainer),
+        child: Icon(
+          Icons.delete_outline,
+          color: theme.colorScheme.onErrorContainer,
+        ),
       ),
       confirmDismiss: (_) async {
         return await showDialog<bool>(
@@ -141,41 +150,42 @@ class _TransactionTile extends ConsumerWidget {
           builder: (ctx) => AlertDialog(
             title: const Text('Delete Transaction'),
             content: const Text(
-                'This cannot be undone. Account balances will be reversed.'),
+              'This cannot be undone. Account balances will be reversed.',
+            ),
             actions: [
               TextButton(
-                  onPressed: () => Navigator.pop(ctx, false),
-                  child: const Text('Cancel')),
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Cancel'),
+              ),
               FilledButton(
-                  onPressed: () => Navigator.pop(ctx, true),
-                  child: const Text('Delete')),
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('Delete'),
+              ),
             ],
           ),
         );
       },
       onDismissed: (_) {
-        ref
-            .read(transactionRepositoryProvider)
-            .delete(tx.id);
+        ref.read(transactionRepositoryProvider).delete(tx.id);
       },
       child: ListTile(
         leading: CircleAvatar(
           backgroundColor: isTransfer
               ? theme.colorScheme.tertiaryContainer
               : isIncome
-                  ? Colors.green.withValues(alpha: 0.2)
-                  : theme.colorScheme.errorContainer,
+              ? Colors.green.withValues(alpha: 0.2)
+              : theme.colorScheme.errorContainer,
           child: Icon(
             isTransfer
                 ? Icons.swap_horiz
                 : isIncome
-                    ? Icons.arrow_downward
-                    : Icons.arrow_upward,
+                ? Icons.arrow_downward
+                : Icons.arrow_upward,
             color: isTransfer
                 ? theme.colorScheme.tertiary
                 : isIncome
-                    ? Colors.green
-                    : theme.colorScheme.error,
+                ? Colors.green
+                : theme.colorScheme.error,
             size: 20,
           ),
         ),
@@ -192,13 +202,17 @@ class _TransactionTile extends ConsumerWidget {
               Icon(Icons.bookmark, size: 16, color: theme.colorScheme.primary),
             const SizedBox(width: 4),
             Text(
-              '${isIncome ? '+' : isTransfer ? '↔' : '-'}${fmt.format(tx.amount.asMajorUnits)}',
+              '${isIncome
+                  ? '+'
+                  : isTransfer
+                  ? '↔'
+                  : '-'}${fmt.format(tx.amount.asMajorUnits)}',
               style: theme.textTheme.titleSmall?.copyWith(
                 color: isIncome
                     ? Colors.green
                     : isTransfer
-                        ? theme.colorScheme.tertiary
-                        : theme.colorScheme.error,
+                    ? theme.colorScheme.tertiary
+                    : theme.colorScheme.error,
                 fontWeight: FontWeight.bold,
               ),
             ),

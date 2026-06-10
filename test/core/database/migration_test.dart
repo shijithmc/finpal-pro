@@ -17,7 +17,9 @@ void main() {
       // Verifying tables exist by inserting a row in each
       const now = '2026-06-10T12:00:00.000';
 
-      await db.into(db.accounts).insert(
+      await db
+          .into(db.accounts)
+          .insert(
             AccountsCompanion.insert(
               id: 'acc-test',
               name: 'Test',
@@ -26,7 +28,9 @@ void main() {
             ),
           );
 
-      await db.into(db.categories).insert(
+      await db
+          .into(db.categories)
+          .insert(
             CategoriesCompanion.insert(
               id: 'cat-test',
               name: 'Test Category',
@@ -46,7 +50,9 @@ void main() {
     test('monthlyAggregatesTable_existsWithPrimaryKey', () async {
       const now = '2026-06-10T12:00:00.000';
 
-      await db.into(db.accounts).insert(
+      await db
+          .into(db.accounts)
+          .insert(
             AccountsCompanion.insert(
               id: 'acc-ma',
               name: 'MA Test',
@@ -55,7 +61,9 @@ void main() {
             ),
           );
 
-      await db.into(db.monthlyAggregates).insert(
+      await db
+          .into(db.monthlyAggregates)
+          .insert(
             MonthlyAggregatesCompanion.insert(
               accountId: 'acc-ma',
               year: 2026,
@@ -70,14 +78,18 @@ void main() {
 
     test('categories_parentIdColumn_exists', () async {
       // Insert root + child to verify parent_id FK works
-      await db.into(db.categories).insertOnConflictUpdate(
+      await db
+          .into(db.categories)
+          .insertOnConflictUpdate(
             CategoriesCompanion.insert(
               id: 'cat-root',
               name: 'Root',
               type: CategoryType.expense,
             ),
           );
-      await db.into(db.categories).insertOnConflictUpdate(
+      await db
+          .into(db.categories)
+          .insertOnConflictUpdate(
             CategoriesCompanion.insert(
               id: 'cat-child',
               name: 'Child',
@@ -85,9 +97,9 @@ void main() {
               type: CategoryType.expense,
             ),
           );
-      final child = await (db.select(db.categories)
-            ..where((c) => c.id.equals('cat-child')))
-          .getSingle();
+      final child = await (db.select(
+        db.categories,
+      )..where((c) => c.id.equals('cat-child'))).getSingle();
       expect(child.parentId, 'cat-root');
     });
   });

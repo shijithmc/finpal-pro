@@ -13,24 +13,32 @@ final class Money extends Equatable {
   const Money.zero({this.currencyCode = 'INR'}) : subunits = 0;
 
   factory Money.fromMajorUnits(double amount, {String currencyCode = 'INR'}) {
-    final subunits =
-        (amount * AppConstants.currencySubunits).round();
+    final subunits = (amount * AppConstants.currencySubunits).round();
     return Money(subunits: subunits, currencyCode: currencyCode);
   }
 
-  double get asMajorUnits =>
-      subunits / AppConstants.currencySubunits;
+  double get asMajorUnits => subunits / AppConstants.currencySubunits;
 
   Money operator +(Money other) {
-    assert(currencyCode == other.currencyCode,
-        'Cannot add Money with different currencies');
-    return Money(subunits: subunits + other.subunits, currencyCode: currencyCode);
+    assert(
+      currencyCode == other.currencyCode,
+      'Cannot add Money with different currencies',
+    );
+    return Money(
+      subunits: subunits + other.subunits,
+      currencyCode: currencyCode,
+    );
   }
 
   Money operator -(Money other) {
-    assert(currencyCode == other.currencyCode,
-        'Cannot subtract Money with different currencies');
-    return Money(subunits: subunits - other.subunits, currencyCode: currencyCode);
+    assert(
+      currencyCode == other.currencyCode,
+      'Cannot subtract Money with different currencies',
+    );
+    return Money(
+      subunits: subunits - other.subunits,
+      currencyCode: currencyCode,
+    );
   }
 
   bool get isNegative => subunits < 0;

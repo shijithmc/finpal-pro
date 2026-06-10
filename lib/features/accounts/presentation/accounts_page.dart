@@ -33,8 +33,7 @@ class AccountsPage extends ConsumerWidget {
           }
           return ListView.builder(
             itemCount: accounts.length,
-            itemBuilder: (ctx, i) =>
-                _AccountTile(account: accounts[i]),
+            itemBuilder: (ctx, i) => _AccountTile(account: accounts[i]),
           );
         },
       ),
@@ -51,9 +50,11 @@ class _EmptyAccountsState extends StatelessWidget {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.account_balance_wallet_outlined,
-              size: 64,
-              color: Theme.of(context).colorScheme.outline),
+          Icon(
+            Icons.account_balance_wallet_outlined,
+            size: 64,
+            color: Theme.of(context).colorScheme.outline,
+          ),
           const SizedBox(height: 16),
           const Text('No accounts yet'),
           const SizedBox(height: 8),
@@ -85,8 +86,10 @@ class _AccountTile extends StatelessWidget {
         backgroundColor: _typeColor(account.type, theme),
         child: Icon(_typeIcon(account.type), color: Colors.white, size: 20),
       ),
-      title: Text(account.name,
-          style: const TextStyle(fontWeight: FontWeight.w600)),
+      title: Text(
+        account.name,
+        style: const TextStyle(fontWeight: FontWeight.w600),
+      ),
       subtitle: Text(_typeLabel(account.type)),
       trailing: Column(
         mainAxisAlignment: MainAxisAlignment.center,

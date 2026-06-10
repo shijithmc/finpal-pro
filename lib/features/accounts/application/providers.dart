@@ -39,33 +39,35 @@ final accountCountProvider = FutureProvider<int>((ref) {
 
 final createAccountProvider =
     Provider<Future<void> Function(CreateAccountParams)>((ref) {
-  final repo = ref.read(accountRepositoryProvider);
-  final uuid = const Uuid();
+      final repo = ref.read(accountRepositoryProvider);
+      final uuid = const Uuid();
 
-  return (CreateAccountParams params) async {
-    final validationError = Account.validate(
-      name: params.name,
-      sortOrder: 0,
-    );
-    if (validationError != null) {
-      throw ArgumentError(validationError);
-    }
+      return (CreateAccountParams params) async {
+        final validationError = Account.validate(
+          name: params.name,
+          sortOrder: 0,
+        );
+        if (validationError != null) {
+          throw ArgumentError(validationError);
+        }
 
-    final companion = AccountsCompanion.insert(
-      id: uuid.v4(),
-      name: params.name.trim(),
-      type: params.type,
-      currency: Value(AppConstants.defaultCurrency),
-      openingBalance:
-          Value(Money.fromMajorUnits(params.openingBalanceMajor).subunits),
-      currentBalance:
-          Value(Money.fromMajorUnits(params.openingBalanceMajor).subunits),
-      createdAt: DateTime.now().toIso8601String(),
-    );
+        final companion = AccountsCompanion.insert(
+          id: uuid.v4(),
+          name: params.name.trim(),
+          type: params.type,
+          currency: Value(AppConstants.defaultCurrency),
+          openingBalance: Value(
+            Money.fromMajorUnits(params.openingBalanceMajor).subunits,
+          ),
+          currentBalance: Value(
+            Money.fromMajorUnits(params.openingBalanceMajor).subunits,
+          ),
+          createdAt: DateTime.now().toIso8601String(),
+        );
 
-    await repo.create(companion);
-  };
-});
+        await repo.create(companion);
+      };
+    });
 
 final class CreateAccountParams {
   final String name;

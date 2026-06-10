@@ -12,27 +12,26 @@ final class DriftCategoryRepository implements ICategoryRepository {
   @override
   Stream<List<Category>> watchAll() {
     return (_db.select(_db.categories)
-          ..orderBy([
-            (c) => OrderingTerm(expression: c.sortOrder),
-          ]))
+          ..orderBy([(c) => OrderingTerm(expression: c.sortOrder)]))
         .watch()
         .map((rows) => rows.map(Category.fromData).toList());
   }
 
   @override
   Future<List<Category>> findByType(CategoryType type) async {
-    final rows = await (_db.select(_db.categories)
-          ..where((c) => c.type.isInValues([type, CategoryType.both]))
-          ..orderBy([(c) => OrderingTerm.asc(c.sortOrder)]))
-        .get();
+    final rows =
+        await (_db.select(_db.categories)
+              ..where((c) => c.type.isInValues([type, CategoryType.both]))
+              ..orderBy([(c) => OrderingTerm.asc(c.sortOrder)]))
+            .get();
     return rows.map(Category.fromData).toList();
   }
 
   @override
   Future<Category?> findById(String id) async {
-    final row = await (_db.select(_db.categories)
-          ..where((c) => c.id.equals(id)))
-        .getSingleOrNull();
+    final row = await (_db.select(
+      _db.categories,
+    )..where((c) => c.id.equals(id))).getSingleOrNull();
     return row == null ? null : Category.fromData(row);
   }
 }

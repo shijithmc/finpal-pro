@@ -16,8 +16,7 @@ class AddTransactionPage extends ConsumerStatefulWidget {
   const AddTransactionPage({super.key});
 
   @override
-  ConsumerState<AddTransactionPage> createState() =>
-      _AddTransactionPageState();
+  ConsumerState<AddTransactionPage> createState() => _AddTransactionPageState();
 }
 
 class _AddTransactionPageState extends ConsumerState<AddTransactionPage>
@@ -84,20 +83,21 @@ class _AddTransactionPageState extends ConsumerState<AddTransactionPage>
 
     try {
       final create = ref.read(createTransactionProvider);
-      final amountSubunits =
-          (_amount * AppConstants.currencySubunits).round();
-      await create(CreateTransactionParams(
-        type: _type,
-        amountSubunits: amountSubunits,
-        debitAccountId: _debitAccountId!,
-        creditAccountId: _creditAccountId!,
-        categoryId: _category?.id,
-        description: _descController.text.trim(),
-        notes: _notesController.text.trim().isEmpty
-            ? null
-            : _notesController.text.trim(),
-        date: _date,
-      ));
+      final amountSubunits = (_amount * AppConstants.currencySubunits).round();
+      await create(
+        CreateTransactionParams(
+          type: _type,
+          amountSubunits: amountSubunits,
+          debitAccountId: _debitAccountId!,
+          creditAccountId: _creditAccountId!,
+          categoryId: _category?.id,
+          description: _descController.text.trim(),
+          notes: _notesController.text.trim().isEmpty
+              ? null
+              : _notesController.text.trim(),
+          date: _date,
+        ),
+      );
       if (mounted) context.pop();
     } on ArgumentError catch (e) {
       setState(() => _error = e.message.toString());
@@ -139,8 +139,11 @@ class _AddTransactionPageState extends ConsumerState<AddTransactionPage>
                 ? const SizedBox(
                     height: 20,
                     width: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2,
-                        color: Colors.white))
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.white,
+                    ),
+                  )
                 : const Text('Save'),
           ),
         ),
@@ -157,9 +160,7 @@ class _AddTransactionPageState extends ConsumerState<AddTransactionPage>
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             // Amount
-            AmountInputField(
-              onChanged: (v) => _amount = v,
-            ),
+            AmountInputField(onChanged: (v) => _amount = v),
             const SizedBox(height: 16),
 
             // Account pickers
@@ -221,7 +222,8 @@ class _AddTransactionPageState extends ConsumerState<AddTransactionPage>
                 },
                 tileColor: theme.colorScheme.surfaceContainerHighest,
                 shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8)),
+                  borderRadius: BorderRadius.circular(8),
+                ),
               ),
               const SizedBox(height: 12),
             ],
@@ -246,8 +248,9 @@ class _AddTransactionPageState extends ConsumerState<AddTransactionPage>
               trailing: const Icon(Icons.edit_calendar_outlined),
               onTap: _pickDate,
               tileColor: theme.colorScheme.surfaceContainerHighest,
-              shape:
-                  RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
             ),
             const SizedBox(height: 12),
 
@@ -264,8 +267,7 @@ class _AddTransactionPageState extends ConsumerState<AddTransactionPage>
 
             if (_error != null) ...[
               const SizedBox(height: 8),
-              Text(_error!,
-                  style: TextStyle(color: theme.colorScheme.error)),
+              Text(_error!, style: TextStyle(color: theme.colorScheme.error)),
             ],
           ],
         ),

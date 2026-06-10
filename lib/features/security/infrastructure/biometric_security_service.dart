@@ -24,14 +24,13 @@ final class BiometricSecurityService implements ISecurityService {
     FlutterSecureStorage? secureStorage,
     LocalAuthentication? localAuth,
     required AppDatabase db,
-  })  : _secureStorage = secureStorage ??
-            const FlutterSecureStorage(
-              aOptions: AndroidOptions(
-                encryptedSharedPreferences: true,
-              ),
-            ),
-        _localAuth = localAuth ?? LocalAuthentication(),
-        _db = db;
+  }) : _secureStorage =
+           secureStorage ??
+           const FlutterSecureStorage(
+             aOptions: AndroidOptions(encryptedSharedPreferences: true),
+           ),
+       _localAuth = localAuth ?? LocalAuthentication(),
+       _db = db;
 
   @override
   Future<bool> hasPinConfigured() async {
@@ -51,7 +50,8 @@ final class BiometricSecurityService implements ISecurityService {
     if (pin.length < AppConstants.minPinLength ||
         pin.length > AppConstants.maxPinLength) {
       throw ArgumentError(
-          'PIN must be ${AppConstants.minPinLength}–${AppConstants.maxPinLength} digits');
+        'PIN must be ${AppConstants.minPinLength}–${AppConstants.maxPinLength} digits',
+      );
     }
     if (!RegExp(r'^\d+$').hasMatch(pin)) {
       throw ArgumentError('PIN must contain only digits');
@@ -98,19 +98,22 @@ final class BiometricSecurityService implements ISecurityService {
   Future<void> clearSecurity() async {
     await _secureStorage.delete(key: _pinHashKey);
     await _secureStorage.delete(key: _pinSaltKey);
-    await (_db.update(_db.securityConfigs)
-          ..where((s) => s.id.equals(AppConstants.securityConfigRowId)))
-        .write(const SecurityConfigsCompanion(
-      pinHash: Value(null),
-      biometricEnabled: Value(false),
-    ));
+    await (_db.update(
+      _db.securityConfigs,
+    )..where((s) => s.id.equals(AppConstants.securityConfigRowId))).write(
+      const SecurityConfigsCompanion(
+        pinHash: Value(null),
+        biometricEnabled: Value(false),
+      ),
+    );
   }
 
   @override
   Future<SecurityConfigSnapshot> readConfig() async {
-    final row = await (_db.select(_db.securityConfigs)
-          ..where((s) => s.id.equals(AppConstants.securityConfigRowId)))
-        .getSingleOrNull();
+    final row =
+        await (_db.select(_db.securityConfigs)
+              ..where((s) => s.id.equals(AppConstants.securityConfigRowId)))
+            .getSingleOrNull();
     final hasPin = await hasPinConfigured();
     return SecurityConfigSnapshot(
       hasPinConfigured: hasPin,

@@ -2,8 +2,7 @@ import '../../../core/database/app_database.dart';
 import 'transaction.dart';
 
 abstract interface class ITransactionRepository {
-  Stream<List<FinTransaction>> watchByDateRange(
-      DateTime from, DateTime to);
+  Stream<List<FinTransaction>> watchByDateRange(DateTime from, DateTime to);
 
   Future<List<FinTransaction>> searchByText(String query);
 
