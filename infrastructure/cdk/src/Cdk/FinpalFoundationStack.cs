@@ -2,6 +2,7 @@ using Amazon.CDK;
 using Amazon.CDK.AWS.Cognito;
 using Amazon.CDK.AWS.DynamoDB;
 using Amazon.CDK.AWS.Apigatewayv2;
+using Amazon.CDK.AWS.Lambda;
 using Amazon.CDK.AWS.SSM;
 using Constructs;
 
@@ -9,35 +10,87 @@ namespace FinpalPro.Cdk
 {
     /// <summary>
     /// Foundation infrastructure for FinPal Pro backend:
-    ///   - Cognito User Pool (auth)
+    ///   - Cognito User Pool (phone-number CUSTOM_AUTH — no OTP, no password)
     ///   - DynamoDB single-table (primary datastore)
     ///   - HTTP API Gateway (Lambda integration point, routes added per Sprint)
     /// </summary>
     public class FinpalFoundationStack : Stack
     {
-        public CfnOutput UserPoolId     { get; }
+        public CfnOutput UserPoolId      { get; }
         public CfnOutput UserPoolClientId { get; }
-        public CfnOutput TableName      { get; }
-        public CfnOutput ApiEndpoint    { get; }
+        public CfnOutput TableName       { get; }
+        public CfnOutput ApiEndpoint     { get; }
 
         public FinpalFoundationStack(Construct scope, string id, IStackProps props = null)
             : base(scope, id, props)
         {
             var env = System.Environment.GetEnvironmentVariable("APP_ENV") ?? "dev";
 
-            // ── Cognito User Pool ──────────────────────────────────────────────
-            var userPool = new UserPool(this, "UserPool", new UserPoolProps
+            // ── Lambda: PreSignUp trigger ──────────────────────────────────────
+            // Auto-confirms every new Cognito user without sending an OTP.
+            // Enables trust-on-first-use (TOFU): mobile number = identity.
+            var preSignUpFn = new Function(this, "PreSignUpFn", new FunctionProps
             {
-                UserPoolName      = $"finpal-pro-users-{env}",
+                FunctionName = $"finpal-pre-signup-{env}",
+                Runtime      = Runtime.NODEJS_20_X,
+                Handler      = "index.handler",
+                Code         = Code.FromInline(
+                    "exports.handler = async (event) => {\n" +
+                    "  event.response.autoConfirmUser = true;\n" +
+                    "  event.response.autoVerifyPhone = true;\n" +
+                    "  return event;\n" +
+                    "};"
+                ),
+                Timeout     = Duration.Seconds(5),
+                Description = "Auto-confirm Cognito users on sign-up without OTP verification.",
+            });
+
+            // ── Lambda: DefineAuthChallenge trigger ────────────────────────────
+            // Issues tokens immediately on the first CUSTOM_AUTH call.
+            // No challenge is issued — mobile number alone authenticates.
+            var defineAuthChallengeFn = new Function(this, "DefineAuthChallengeFn", new FunctionProps
+            {
+                FunctionName = $"finpal-define-auth-challenge-{env}",
+                Runtime      = Runtime.NODEJS_20_X,
+                Handler      = "index.handler",
+                Code         = Code.FromInline(
+                    "exports.handler = async (event) => {\n" +
+                    "  if (event.request.session.length === 0) {\n" +
+                    "    event.response.issueTokens = true;\n" +
+                    "    event.response.failAuthentication = false;\n" +
+                    "  } else {\n" +
+                    "    event.response.issueTokens = false;\n" +
+                    "    event.response.failAuthentication = true;\n" +
+                    "  }\n" +
+                    "  return event;\n" +
+                    "};"
+                ),
+                Timeout     = Duration.Seconds(5),
+                Description = "CUSTOM_AUTH: issue tokens immediately without a challenge.",
+            });
+
+            // ── Cognito User Pool (Phone-based, TOFU) ──────────────────────────
+            // NOTE: construct id changed "UserPool" → "UserPoolPhone" because
+            // SignInAliases is an immutable CloudFormation property. CloudFormation
+            // will create this new pool and retain the old one (RemovalPolicy.RETAIN).
+            // After a successful CDK deploy, manually delete the old email-based
+            // pool from the AWS Console — it is no longer referenced by any stack.
+            var userPool = new UserPool(this, "UserPoolPhone", new UserPoolProps
+            {
+                UserPoolName      = $"finpal-pro-users-phone-{env}",
                 SelfSignUpEnabled = true,
-                SignInAliases     = new SignInAliases { Email = true, Username = false },
-                AutoVerify        = new AutoVerifiedAttrs { Email = true },
+
+                // Phone number is the only sign-in identifier.
+                SignInAliases = new SignInAliases { Phone = true, Username = false },
+                AutoVerify    = new AutoVerifiedAttrs { Phone = true },
+
                 StandardAttributes = new StandardAttributes
                 {
-                    Email = new StandardAttribute { Required = true, Mutable = false },
-                    GivenName  = new StandardAttribute { Required = false, Mutable = true },
-                    FamilyName = new StandardAttribute { Required = false, Mutable = true },
+                    PhoneNumber = new StandardAttribute { Required = true, Mutable = true },
                 },
+
+                // Password policy kept to satisfy the signUp API contract.
+                // The password is never used for authentication (CUSTOM_AUTH only).
                 PasswordPolicy = new PasswordPolicy
                 {
                     MinLength        = 8,
@@ -46,107 +99,100 @@ namespace FinpalPro.Cdk
                     RequireDigits    = true,
                     RequireSymbols   = false,
                 },
-                AccountRecovery   = AccountRecovery.EMAIL_ONLY,
-                RemovalPolicy     = RemovalPolicy.RETAIN,
 
-                // MFA: OPTIONAL — user chooses TOTP in Sprint 5.
-                Mfa               = Mfa.OPTIONAL,
-                MfaSecondFactor   = new MfaSecondFactor { Otp = true, Sms = false },
+                // MFA and account recovery are irrelevant with CUSTOM_AUTH.
+                Mfa             = Mfa.OFF,
+                AccountRecovery = AccountRecovery.NONE,
+                RemovalPolicy   = RemovalPolicy.RETAIN,
+
+                // Attach trigger Lambdas.
+                LambdaTriggers = new UserPoolTriggers
+                {
+                    PreSignUp           = preSignUpFn,
+                    DefineAuthChallenge = defineAuthChallengeFn,
+                },
             });
 
-            // App client — Flutter mobile app (no client secret for public client).
-            var userPoolClient = new UserPoolClient(this, "MobileAppClient", new UserPoolClientProps
+            // App client — Flutter app (public client, no secret).
+            // Only CUSTOM_AUTH is enabled; all password-based flows are disabled.
+            var userPoolClient = new UserPoolClient(this, "MobileAppClientV2", new UserPoolClientProps
             {
-                UserPool          = userPool,
-                UserPoolClientName = $"finpal-pro-flutter-{env}",
-                GenerateSecret    = false,   // Public client (Flutter app)
-                AuthFlows         = new AuthFlow
+                UserPool           = userPool,
+                UserPoolClientName = $"finpal-pro-flutter-phone-{env}",
+                GenerateSecret     = false,   // Public client (Flutter app)
+                AuthFlows          = new AuthFlow
                 {
-                    UserPassword   = false,  // Avoid plain-text password flows
-                    UserSrp        = true,   // SRP (Secure Remote Password) — recommended
-                    Custom         = false,
+                    UserPassword = false,  // Never allow plain-text password auth
+                    UserSrp      = false,  // SRP not used — CUSTOM_AUTH only
+                    Custom       = true,   // DefineAuthChallenge issues tokens immediately
                 },
                 PreventUserExistenceErrors = true,
-                AccessTokenValidity  = Duration.Hours(1),
-                IdTokenValidity      = Duration.Hours(1),
-                RefreshTokenValidity = Duration.Days(30),
-                EnableTokenRevocation = true,
+                AccessTokenValidity        = Duration.Hours(1),
+                IdTokenValidity            = Duration.Hours(1),
+                RefreshTokenValidity       = Duration.Days(30),
+                EnableTokenRevocation      = true,
                 ReadAttributes = new ClientAttributes().WithStandardAttributes(
                     new StandardAttributesMask
                     {
-                        Email = true, GivenName = true, FamilyName = true, EmailVerified = true,
+                        PhoneNumber = true, PhoneNumberVerified = true,
                     }),
             });
 
             // ── DynamoDB Single-Table ──────────────────────────────────────────
-            // Partition key: PK (string) — entity prefix#id (e.g. USER#uuid, TXN#uuid)
-            // Sort key:      SK (string) — entity type + date (e.g. TXN#2026-06#txn-id)
-            //
-            // GSI-1: GSI1PK / GSI1SK — inverted index for reverse lookups
-            // GSI-2: GSI2PK / GSI2SK — category/budget queries by month
             var table = new Table(this, "MainTable", new TableProps
             {
-                TableName     = $"finpal-pro-{env}",
-                BillingMode   = BillingMode.PAY_PER_REQUEST,  // No capacity planning needed for Sprint 3
-                PartitionKey  = new Attribute { Name = "PK", Type = AttributeType.STRING },
-                SortKey       = new Attribute { Name = "SK", Type = AttributeType.STRING },
+                TableName    = $"finpal-pro-{env}",
+                BillingMode  = BillingMode.PAY_PER_REQUEST,
+                PartitionKey = new Attribute { Name = "PK", Type = AttributeType.STRING },
+                SortKey      = new Attribute { Name = "SK", Type = AttributeType.STRING },
                 PointInTimeRecoverySpecification = new PointInTimeRecoverySpecification
                 {
                     PointInTimeRecoveryEnabled = true,
                 },
                 DeletionProtection  = env == "production",
                 RemovalPolicy       = env == "production" ? RemovalPolicy.RETAIN : RemovalPolicy.DESTROY,
-
-                // Time-to-live for soft-deleted / ephemeral records (Sprint 5).
                 TimeToLiveAttribute = "TTL",
             });
 
-            // GSI-1: reverse lookup (SK → PK pattern for category items etc.)
             table.AddGlobalSecondaryIndex(new GlobalSecondaryIndexProps
             {
-                IndexName     = "GSI1",
-                PartitionKey  = new Attribute { Name = "GSI1PK", Type = AttributeType.STRING },
-                SortKey       = new Attribute { Name = "GSI1SK", Type = AttributeType.STRING },
+                IndexName      = "GSI1",
+                PartitionKey   = new Attribute { Name = "GSI1PK", Type = AttributeType.STRING },
+                SortKey        = new Attribute { Name = "GSI1SK", Type = AttributeType.STRING },
                 ProjectionType = ProjectionType.ALL,
             });
 
-            // GSI-2: date range queries (monthly analytics, budget queries)
             table.AddGlobalSecondaryIndex(new GlobalSecondaryIndexProps
             {
-                IndexName     = "GSI2",
-                PartitionKey  = new Attribute { Name = "GSI2PK", Type = AttributeType.STRING },
-                SortKey       = new Attribute { Name = "GSI2SK", Type = AttributeType.STRING },
+                IndexName      = "GSI2",
+                PartitionKey   = new Attribute { Name = "GSI2PK", Type = AttributeType.STRING },
+                SortKey        = new Attribute { Name = "GSI2SK", Type = AttributeType.STRING },
                 ProjectionType = ProjectionType.ALL,
             });
 
             // ── HTTP API Gateway ───────────────────────────────────────────────
-            // Empty API created now; Lambda integrations added in Sprint 4+.
             var httpApi = new HttpApi(this, "HttpApi", new HttpApiProps
             {
                 ApiName     = $"finpal-pro-api-{env}",
                 Description = "FinPal Pro backend HTTP API",
                 CorsPreflight = new CorsPreflightOptions
                 {
-                    AllowOrigins = new[] { "*" },   // Tightened per-origin in production (Sprint 5)
+                    AllowOrigins = new[] { "*" },
                     AllowMethods = new[] { CorsHttpMethod.GET, CorsHttpMethod.POST,
                                           CorsHttpMethod.PUT, CorsHttpMethod.DELETE,
                                           CorsHttpMethod.OPTIONS },
                     AllowHeaders = new[] { "Content-Type", "Authorization", "X-Api-Key" },
                     MaxAge       = Duration.Days(1),
                 },
-                // Disable default endpoint in production; use custom domain (Sprint 5).
                 DisableExecuteApiEndpoint = false,
             });
 
-            // NOTE: Lambda integrations and routes added in Sprint 4.
-            // Health-check route deferred — requires HttpUrlIntegration from integrations sub-package.
-
-            // ── SSM Parameters (consumed by Lambda functions and CI) ───────────
+            // ── SSM Parameters ─────────────────────────────────────────────────
             new StringParameter(this, "UserPoolIdParam", new StringParameterProps
             {
                 ParameterName = "/finpal-pro/cognito/user-pool-id",
                 StringValue   = userPool.UserPoolId,
-                Description   = "FinPal Pro Cognito User Pool ID",
+                Description   = "FinPal Pro Cognito User Pool ID (phone-based CUSTOM_AUTH)",
             });
 
             new StringParameter(this, "UserPoolClientIdParam", new StringParameterProps
@@ -174,14 +220,14 @@ namespace FinpalPro.Cdk
             UserPoolId = new CfnOutput(this, "UserPoolIdOutput", new CfnOutputProps
             {
                 Value       = userPool.UserPoolId,
-                Description = "Cognito User Pool ID",
+                Description = "Cognito User Pool ID (phone-based CUSTOM_AUTH)",
                 ExportName  = "FinpalUserPoolId",
             });
 
             UserPoolClientId = new CfnOutput(this, "UserPoolClientIdOutput", new CfnOutputProps
             {
                 Value       = userPoolClient.UserPoolClientId,
-                Description = "Cognito App Client ID (Flutter mobile)",
+                Description = "Cognito App Client ID (Flutter app)",
                 ExportName  = "FinpalUserPoolClientId",
             });
 

@@ -1,25 +1,15 @@
-/// Contract for PIN and biometric authentication.
-/// Infrastructure layer provides the implementation backed by Android Keystore.
+/// Contract for biometric hardware access.
+///
+/// PIN auth removed in schema v4 — mobile number (Cognito) is the login method.
+/// This interface is retained for biometric app-lock (Sprint 5, PBI-015).
 abstract interface class ISecurityService {
-  /// True if a PIN has been configured.
-  Future<bool> hasPinConfigured();
-
   /// True if biometric hardware is available and enrolled on this device.
   Future<bool> isBiometricAvailable();
 
-  /// Sets (or changes) the PIN. Hashes before storage — never stores plaintext.
-  Future<void> setPin(String pin);
-
-  /// Verifies a candidate PIN against the stored hash.
-  Future<bool> verifyPin(String candidate);
-
-  /// Triggers biometric prompt. Returns true on success.
+  /// Triggers the OS biometric prompt. Returns true on success.
   Future<bool> authenticateWithBiometric();
 
-  /// Clears PIN and disables biometric (used for PIN removal or data wipe).
-  Future<void> clearSecurity();
-
-  /// Reads current security configuration.
+  /// Reads current security configuration (biometric, lock-on-background).
   Future<SecurityConfigSnapshot> readConfig();
 
   /// Updates biometric-enabled flag.
@@ -27,13 +17,14 @@ abstract interface class ISecurityService {
 }
 
 final class SecurityConfigSnapshot {
+  /// Always false after schema v4 — PIN no longer used.
   final bool hasPinConfigured;
   final bool biometricEnabled;
   final bool lockOnBackground;
   final int lockDelaySeconds;
 
   const SecurityConfigSnapshot({
-    required this.hasPinConfigured,
+    this.hasPinConfigured = false,
     required this.biometricEnabled,
     required this.lockOnBackground,
     required this.lockDelaySeconds,

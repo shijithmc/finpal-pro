@@ -3,45 +3,40 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../features/accounts/presentation/account_form_page.dart';
+import '../../features/auth/application/providers.dart';
+import '../../features/auth/presentation/mobile_login_page.dart';
 import '../../features/backup/presentation/backup_page.dart';
 import '../../features/budgets/presentation/budget_page.dart';
 import '../../features/analytics/presentation/analytics_page.dart';
 import '../../features/home/presentation/home_page.dart';
-import '../../features/security/application/providers.dart';
-import '../../features/security/presentation/lock_screen_page.dart';
-import '../../features/security/presentation/setup_pin_page.dart';
 import '../../features/transactions/presentation/add_transaction_page.dart';
 import '../../features/transactions/presentation/templates_page.dart'
     show TemplateData;
 
 final routerProvider = Provider<GoRouter>((ref) {
-  final isLocked = ref.watch(appLockedProvider);
-  final isSetupAsync = ref.watch(isSetupCompleteProvider);
+  // Watch auth state changes so the router refreshes on login/logout.
+  ref.watch(authStateChangedProvider);
+  final isLoggedInAsync = ref.watch(isLoggedInProvider);
 
   return GoRouter(
     initialLocation: '/',
     redirect: (context, state) {
-      final setupDone = isSetupAsync.valueOrNull ?? false;
-      if (!setupDone && state.matchedLocation != '/setup') {
-        return '/setup';
-      }
-      if (setupDone && isLocked && state.matchedLocation != '/lock') {
-        return '/lock';
-      }
+      // While the auth state is loading, stay put to avoid flash.
+      if (isLoggedInAsync.isLoading) return null;
+
+      final loggedIn = isLoggedInAsync.valueOrNull ?? false;
+
+      // Not logged in → send to /login (unless already there).
+      if (!loggedIn && state.matchedLocation != '/login') return '/login';
+
+      // Logged in → send to home if somehow on /login.
+      if (loggedIn && state.matchedLocation == '/login') return '/';
+
       return null;
     },
     routes: [
-      GoRoute(path: '/', builder: (_, _) => const HomePage()),
-      GoRoute(path: '/lock', builder: (_, _) => const LockScreenPage()),
-      GoRoute(
-        path: '/setup',
-        builder: (ctx, _) => SetupPinPage(
-          onSetupComplete: () {
-            ref.invalidate(isSetupCompleteProvider);
-            GoRouter.of(ctx).go('/');
-          },
-        ),
-      ),
+      GoRoute(path: '/',      builder: (_, _) => const HomePage()),
+      GoRoute(path: '/login', builder: (_, _) => const MobileLoginPage()),
       GoRoute(
         path: '/transactions/new',
         builder: (_, state) {
@@ -63,7 +58,7 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: '/settings',
         builder: (_, _) => const _SettingsPage(),
         routes: [
-          GoRoute(path: 'backup', builder: (_, _) => const BackupPage()),
+          GoRoute(path: 'backup',  builder: (_, _) => const BackupPage()),
           GoRoute(path: 'budgets', builder: (_, _) => const BudgetPage()),
         ],
       ),
@@ -82,11 +77,11 @@ class _SearchPage extends StatelessWidget {
   );
 }
 
-class _SettingsPage extends StatelessWidget {
+class _SettingsPage extends ConsumerWidget {
   const _SettingsPage();
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     return Scaffold(
       appBar: AppBar(title: const Text('Settings')),
@@ -114,6 +109,18 @@ class _SettingsPage extends StatelessWidget {
             subtitle: const Text('Spend breakdown and trends'),
             trailing: const Icon(Icons.chevron_right),
             onTap: () => context.push('/analytics'),
+          ),
+          const Divider(indent: 72),
+          // ── Sign out ────────────────────────────────────────────────────
+          ListTile(
+            leading: const Icon(Icons.logout_outlined),
+            title: const Text('Sign Out'),
+            subtitle: const Text('Remove stored login from this device'),
+            onTap: () async {
+              await ref.read(authServiceProvider).signOut();
+              ref.invalidate(isLoggedInProvider);
+              ref.read(authStateChangedProvider.notifier).state++;
+            },
           ),
           const Divider(indent: 72),
           Padding(

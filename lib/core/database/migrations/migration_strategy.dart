@@ -23,6 +23,17 @@ MigrationStrategy buildMigrationStrategy(AppDatabase db) {
       if (from < 3) {
         await m.createTable(db.budgets);
       }
+      // v3 → v4: add cognitoUserId to security_configs; clear legacy pinHash.
+      if (from < 4) {
+        // Use raw ALTER TABLE to avoid Drift generics mismatch on TextColumn.
+        await db.customStatement(
+          'ALTER TABLE security_configs ADD COLUMN cognito_user_id TEXT',
+        );
+        // Clear PIN hashes — PIN auth replaced by Cognito mobile-number login.
+        await db.customStatement(
+          'UPDATE security_configs SET pin_hash = NULL',
+        );
+      }
     },
     beforeOpen: (details) async {
       await db.customStatement('PRAGMA foreign_keys = ON');
