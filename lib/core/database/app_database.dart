@@ -120,12 +120,19 @@ class Budgets extends Table {
 class SecurityConfigs extends Table {
   /// Singleton row — always id = 1.
   IntColumn get id => integer().withDefault(const Constant(1))();
+
+  /// Legacy PIN hash — cleared in schema v4 migration.
+  /// Column kept for safe forward migration; stop writing to it.
   TextColumn get pinHash => text().nullable()();
+
   BoolColumn get biometricEnabled =>
       boolean().withDefault(const Constant(false))();
   BoolColumn get lockOnBackground =>
       boolean().withDefault(const Constant(true))();
   IntColumn get lockDelaySeconds => integer().withDefault(const Constant(0))();
+
+  /// Cognito user sub (UUID). Populated on first login — added in schema v4.
+  TextColumn get cognitoUserId => text().nullable()();
 
   @override
   Set<Column> get primaryKey => {id};
@@ -180,7 +187,7 @@ class AppDatabase extends _$AppDatabase {
   }
 
   @override
-  int get schemaVersion => 3;
+  int get schemaVersion => 4;
 
   @override
   MigrationStrategy get migration => buildMigrationStrategy(this);

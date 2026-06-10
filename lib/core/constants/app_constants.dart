@@ -17,15 +17,6 @@ abstract final class AppConstants {
   /// Smallest currency unit multiplier — paise for INR (1 INR = 100 paise).
   static const int currencySubunits = 100;
 
-  /// Maximum PIN attempts before exponential back-off kicks in.
-  static const int maxPinAttempts = 5;
-
-  /// Minimum PIN length in digits.
-  static const int minPinLength = 4;
-
-  /// Maximum PIN length in digits.
-  static const int maxPinLength = 6;
-
   /// Maximum description length in characters.
   static const int maxDescriptionLength = 255;
 

@@ -28,6 +28,9 @@ dependencies:
   sqlite3_flutter_libs: ^0.5.24
   path_provider: ^2.1.5
 
+  # Authentication: direct Cognito REST API calls (mobile number, no OTP)
+  http: ^1.2.2
+
   # Security: biometric + keystore-backed secure storage
   local_auth: ^2.3.0
   flutter_secure_storage: ^9.2.2

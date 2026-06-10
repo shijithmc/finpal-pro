@@ -67,11 +67,15 @@ jobs:
         run: dart run build_runner build --delete-conflicting-outputs
 
       - name: Build Flutter Web
+        # COGNITO_POOL_ID and COGNITO_CLIENT_ID must be set as repository secrets.
+        # After CDK deploy, copy UserPoolIdOutput and UserPoolClientIdOutput
+        # from cdk-outputs.json to GitHub Settings → Secrets.
         run: |
           flutter build web \
             --release \
             --dart-define=APP_ENV=production \
-            --web-renderer canvaskit
+            --dart-define=COGNITO_POOL_ID=${{ secrets.COGNITO_POOL_ID }} \
+            --dart-define=COGNITO_CLIENT_ID=${{ secrets.COGNITO_CLIENT_ID }}
 
       - name: Upload web artifact
         uses: actions/upload-artifact@v4
