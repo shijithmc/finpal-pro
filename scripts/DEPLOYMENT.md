@@ -108,6 +108,118 @@ The `build-release` CI job only runs on a **GitHub Release** (tag push). PRs and
 
 ---
 
+---
+
+## AWS cloud deployment (CDK)
+
+Infrastructure is defined in `infrastructure/cdk/` as AWS CDK v2 C# — two stacks deployed to `ap-south-1` (Mumbai).
+
+| Stack | Resources | Purpose |
+|-------|-----------|---------|
+| `FinpalDistribution` | S3 + CloudFront | APK/AAB artifact hosting |
+| `FinpalFoundation` | Cognito + DynamoDB + API Gateway | Backend auth, data, API |
+
+### Prerequisites
+
+- AWS CLI installed and configured (`aws configure`)
+- .NET 8 SDK installed
+- CDK CLI: `npm install -g aws-cdk`
+
+### First-time setup (bootstrap)
+
+Bootstrap creates a CDK toolkit S3 bucket + IAM roles in the target account/region. Run once per account/region:
+
+```bash
+./scripts/deploy-aws.sh --bootstrap-only
+```
+
+```powershell
+.\scripts\deploy-aws.ps1 -BootstrapOnly
+```
+
+### Deploy all stacks
+
+```bash
+./scripts/deploy-aws.sh                        # dev env
+./scripts/deploy-aws.sh --env production       # production
+./scripts/deploy-aws.sh --skip-bootstrap       # skip if already bootstrapped
+```
+
+```powershell
+.\scripts\deploy-aws.ps1                        # dev env
+.\scripts\deploy-aws.ps1 -Env production        # production
+.\scripts\deploy-aws.ps1 -SkipBootstrap         # skip if already bootstrapped
+```
+
+### Deploy a single stack
+
+```bash
+./scripts/deploy-aws.sh --stack FinpalFoundation
+```
+
+```powershell
+.\scripts\deploy-aws.ps1 -Stack FinpalFoundation
+```
+
+### Dry run (synth only, no AWS changes)
+
+```bash
+./scripts/deploy-aws.sh --dry-run
+```
+
+```powershell
+.\scripts\deploy-aws.ps1 -DryRun
+```
+
+### Outputs
+
+Deployment outputs are written to `cdk-outputs.json` at repo root:
+
+```json
+{
+  "FinpalDistribution": {
+    "DistributionDomainOutput": "https://d1j6gya33wydw7.cloudfront.net",
+    "ArtifactBucketOutput": "finpal-pro-artifacts-018535004303"
+  },
+  "FinpalFoundation": {
+    "ApiEndpointOutput": "https://4gkbne88ck.execute-api.ap-south-1.amazonaws.com",
+    "TableNameOutput": "finpal-pro-dev",
+    "UserPoolIdOutput": "ap-south-1_KeUl8KcN1",
+    "UserPoolClientIdOutput": "2rj64mabqu4bar9997gipoh0c9"
+  }
+}
+```
+
+All resource IDs are also stored as SSM parameters under `/finpal-pro/...`.
+
+### AWS deploy environment variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `APP_ENV` | `dev` | Environment tag applied to all resources |
+| `AWS_DEFAULT_REGION` | `ap-south-1` | Deployment region |
+| `CDK_DEFAULT_ACCOUNT` | resolved from `aws sts` | AWS account ID |
+| `AWS_ACCESS_KEY_ID` | — | AWS credentials (or use `aws configure`) |
+| `AWS_SECRET_ACCESS_KEY` | — | AWS credentials |
+
+### CI/CD automatic deployment
+
+CDK deploys automatically when a **GitHub Release** is created (same trigger as the signed APK/AAB build). The CI job:
+1. Installs CDK CLI
+2. Runs `dotnet build` on the CDK project
+3. Runs `cdk deploy --all` with `APP_ENV=production`
+
+Required GitHub Secrets for AWS deployment:
+
+| Secret | Value |
+|--------|-------|
+| `AWS_ACCESS_KEY_ID` | IAM user/role access key |
+| `AWS_SECRET_ACCESS_KEY` | IAM user/role secret key |
+
+> **Security note:** Use an IAM role with least-privilege CDK permissions, not root credentials. See [CDK bootstrap permissions](https://docs.aws.amazon.com/cdk/v2/guide/bootstrapping-env.html).
+
+---
+
 ## Troubleshooting
 
 | Problem | Fix |
