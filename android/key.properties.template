@@ -1,0 +1,18 @@
+# ── FinPal Pro Android release signing ──────────────────────────────────────
+# Copy this file to android/key.properties and fill in real values.
+# NEVER commit android/key.properties — it is in .gitignore.
+#
+# Environment-variable alternative (CI):
+#   KEY_ALIAS         — key alias inside the keystore
+#   KEY_PASSWORD      — key password
+#   STORE_PASSWORD    — keystore password
+#   KEYSTORE_PATH     — absolute path to the .jks file (default: android/finpal-pro-release.jks)
+#
+# Generate a new keystore:
+#   keytool -genkey -v -keystore android/finpal-pro-release.jks \
+#     -alias finpal-pro -keyalg RSA -keysize 4096 -validity 10000
+# ─────────────────────────────────────────────────────────────────────────────
+storeFile=finpal-pro-release.jks
+storePassword=CHANGE_ME
+keyAlias=finpal-pro
+keyPassword=CHANGE_ME

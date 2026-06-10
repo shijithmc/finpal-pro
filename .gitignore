@@ -47,3 +47,13 @@ app.*.map.json
 # Tool directories not part of the project
 .playwright-mcp/
 .claude/
+
+# Android release signing — NEVER commit these
+android/key.properties
+android/*.jks
+android/*.keystore
+*.jks
+*.keystore
+
+# Deployment output artifacts
+dist/

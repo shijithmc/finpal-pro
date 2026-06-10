@@ -5,10 +5,13 @@ on:
     branches: ["**"]
   pull_request:
     branches: [main, master]
+  release:
+    types: [published] # full signed release build on tag push
 
 jobs:
-  build:
-    name: Flutter CI
+  # ── Lint / test ─────────────────────────────────────────────────────────────
+  test:
+    name: Lint & Test
     runs-on: ubuntu-latest
 
     steps:
@@ -26,7 +29,7 @@ jobs:
         run: flutter pub get
 
       - name: Generate Drift code
-        run: dart run build_runner build
+        run: dart run build_runner build --delete-conflicting-outputs
 
       - name: Format check
         run: dart format --set-exit-if-changed lib/ test/
@@ -35,14 +38,150 @@ jobs:
         run: flutter analyze --fatal-infos
 
       - name: Unit tests
-        run: flutter test test/
+        run: flutter test test/ --reporter=compact
 
-      - name: Build APK (release)
-        run: flutter build apk --release --target-platform android-arm64
+  # ── Debug APK (every PR / push — no secrets required) ───────────────────────
+  build-debug:
+    name: Build Debug APK
+    needs: test
+    runs-on: ubuntu-latest
+    if: github.event_name != 'release'
 
-      - name: Upload APK artifact
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.41.9"
+          channel: stable
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Generate Drift code
+        run: dart run build_runner build --delete-conflicting-outputs
+
+      - name: Build Debug APK
+        run: flutter build apk --debug --target-platform android-arm64
+
+      - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
-          name: finpal-pro-release-apk
-          path: build/app/outputs/flutter-apk/app-release.apk
-          retention-days: 14
+          name: finpal-pro-debug-apk
+          path: build/app/outputs/flutter-apk/app-debug.apk
+          retention-days: 7
+
+  # ── Release APK + AAB (release tag only — requires keystore secrets) ─────────
+  build-release:
+    name: Build Release APK + AAB
+    needs: test
+    runs-on: ubuntu-latest
+    if: github.event_name == 'release'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.41.9"
+          channel: stable
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Generate Drift code
+        run: dart run build_runner build --delete-conflicting-outputs
+
+      # Decode the keystore from the base64 GitHub secret.
+      # To create: base64 -w 0 android/finpal-pro-release.jks > keystore.b64
+      # Then add the content as secret KEYSTORE_BASE64 in GitHub repo settings.
+      - name: Decode keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+        run: |
+          echo "$KEYSTORE_BASE64" | base64 --decode > android/finpal-pro-release.jks
+
+      - name: Write key.properties
+        env:
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
+        run: |
+          cat > android/key.properties <<KEYEOF
+          storeFile=finpal-pro-release.jks
+          storePassword=${STORE_PASSWORD}
+          keyAlias=${KEY_ALIAS}
+          keyPassword=${KEY_PASSWORD}
+          KEYEOF
+
+      - name: Read version
+        id: version
+        run: |
+          VERSION=$(grep '^version:' pubspec.yaml | awk '{print $2}' | tr -d '\r')
+          VERSION_NAME="${VERSION%%+*}"
+          echo "version_name=$VERSION_NAME" >> "$GITHUB_OUTPUT"
+
+      - name: Build release APK (arm64)
+        run: |
+          flutter build apk \
+            --release \
+            --target-platform android-arm64 \
+            --dart-define=APP_ENV=production
+
+      - name: Build release AAB (Play Store)
+        run: |
+          flutter build appbundle \
+            --release \
+            --dart-define=APP_ENV=production
+
+      - name: Stage artifacts
+        run: |
+          VERSION="${{ steps.version.outputs.version_name }}"
+          mkdir -p dist
+          cp build/app/outputs/flutter-apk/app-release.apk \
+             "dist/finpal-pro-${VERSION}-release.apk"
+          cp build/app/outputs/bundle/release/app-release.aab \
+             "dist/finpal-pro-${VERSION}-release.aab"
+          cd dist && sha256sum \
+            "finpal-pro-${VERSION}-release.apk" \
+            "finpal-pro-${VERSION}-release.aab" \
+            > "finpal-pro-${VERSION}-checksums.sha256"
+
+      - name: Upload release APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: finpal-pro-${{ steps.version.outputs.version_name }}-release-apk
+          path: dist/finpal-pro-${{ steps.version.outputs.version_name }}-release.apk
+          retention-days: 90
+
+      - name: Upload release AAB
+        uses: actions/upload-artifact@v4
+        with:
+          name: finpal-pro-${{ steps.version.outputs.version_name }}-release-aab
+          path: dist/finpal-pro-${{ steps.version.outputs.version_name }}-release.aab
+          retention-days: 90
+
+      - name: Upload checksums
+        uses: actions/upload-artifact@v4
+        with:
+          name: finpal-pro-${{ steps.version.outputs.version_name }}-checksums
+          path: dist/finpal-pro-${{ steps.version.outputs.version_name }}-checksums.sha256
+          retention-days: 90
+
+      # Attach all artifacts directly to the GitHub Release page.
+      - name: Attach to GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${{ steps.version.outputs.version_name }}"
+          gh release upload "${{ github.event.release.tag_name }}" \
+            "dist/finpal-pro-${VERSION}-release.apk" \
+            "dist/finpal-pro-${VERSION}-release.aab" \
+            "dist/finpal-pro-${VERSION}-checksums.sha256" \
+            --clobber
