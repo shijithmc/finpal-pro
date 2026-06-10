@@ -185,3 +185,55 @@ jobs:
             "dist/finpal-pro-${VERSION}-release.aab" \
             "dist/finpal-pro-${VERSION}-checksums.sha256" \
             --clobber
+
+  # ── Deploy AWS infrastructure via CDK (release tag only) ─────────────────────
+  deploy-aws:
+    name: Deploy AWS Infrastructure (CDK)
+    needs: build-release
+    runs-on: ubuntu-latest
+    if: github.event_name == 'release'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Install CDK CLI
+        run: npm install -g aws-cdk
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ap-south-1
+
+      - name: Build CDK project
+        run: dotnet build infrastructure/cdk/src --configuration Release --nologo -q
+
+      - name: CDK synth (validate templates)
+        run: cdk synth
+        working-directory: infrastructure/cdk
+        env:
+          APP_ENV: production
+          CDK_DEFAULT_ACCOUNT: ${{ secrets.AWS_ACCOUNT_ID }}
+          CDK_DEFAULT_REGION: ap-south-1
+
+      - name: CDK deploy (all stacks)
+        run: cdk deploy --all --require-approval never --outputs-file cdk-outputs.json
+        working-directory: infrastructure/cdk
+        env:
+          APP_ENV: production
+          CDK_DEFAULT_ACCOUNT: ${{ secrets.AWS_ACCOUNT_ID }}
+          CDK_DEFAULT_REGION: ap-south-1
+
+      - name: Upload CDK outputs
+        uses: actions/upload-artifact@v4
+        with:
+          name: cdk-outputs-${{ github.event.release.tag_name }}
+          path: infrastructure/cdk/cdk-outputs.json
+          retention-days: 90
