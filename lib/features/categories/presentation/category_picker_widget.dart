@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/database/app_database.dart';
 import '../application/providers.dart';
 import '../domain/category.dart';
+import '../domain/category_icon.dart';
 
 /// Bottom-sheet category picker.
 /// Returns the selected [Category] or null (no category).
@@ -59,11 +60,7 @@ class CategoryPickerWidget extends ConsumerWidget {
   ) sync* {
     yield ListTile(
       contentPadding: EdgeInsets.only(left: 16.0 + depth * 20, right: 16),
-      leading: Icon(
-        cat.iconCode != null
-            ? IconData(cat.iconCode!, fontFamily: 'MaterialIcons')
-            : Icons.label_outline,
-      ),
+      leading: Icon(resolveIcon(cat.iconEnum)),
       title: Text(cat.name),
       selected: selectedId == cat.id,
       onTap: () {

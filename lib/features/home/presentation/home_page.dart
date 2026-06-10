@@ -7,6 +7,7 @@ import '../../../core/database/app_database.dart';
 import '../../accounts/application/providers.dart';
 import '../../transactions/application/providers.dart';
 import '../../transactions/presentation/transaction_list_page.dart';
+import '../../transactions/presentation/templates_page.dart';
 import '../../accounts/presentation/accounts_page.dart';
 
 class HomePage extends ConsumerStatefulWidget {
@@ -22,6 +23,7 @@ class _HomePageState extends ConsumerState<HomePage> {
   static const _pages = <Widget>[
     _DashboardTab(),
     TransactionListPage(),
+    TemplatesPage(),
     AccountsPage(),
   ];
 
@@ -42,6 +44,11 @@ class _HomePageState extends ConsumerState<HomePage> {
             icon: Icon(Icons.receipt_long_outlined),
             selectedIcon: Icon(Icons.receipt_long),
             label: 'Transactions',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.bookmark_outline),
+            selectedIcon: Icon(Icons.bookmark),
+            label: 'Templates',
           ),
           NavigationDestination(
             icon: Icon(Icons.account_balance_wallet_outlined),

@@ -11,9 +11,13 @@ import '../../accounts/domain/account.dart';
 import '../../categories/domain/category.dart';
 import '../../categories/presentation/category_picker_widget.dart';
 import '../application/providers.dart';
+import 'templates_page.dart' show TemplateData;
 
 class AddTransactionPage extends ConsumerStatefulWidget {
-  const AddTransactionPage({super.key});
+  /// Pre-fills the form from a bookmark template when provided.
+  final TemplateData? template;
+
+  const AddTransactionPage({super.key, this.template});
 
   @override
   ConsumerState<AddTransactionPage> createState() => _AddTransactionPageState();
@@ -38,17 +42,35 @@ class _AddTransactionPageState extends ConsumerState<AddTransactionPage>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this)
-      ..addListener(() {
-        setState(() {
-          _type = [
-            TransactionType.expense,
-            TransactionType.income,
-            TransactionType.transfer,
-          ][_tabController.index];
-          _category = null;
-        });
-      });
+    final t = widget.template;
+    if (t != null) {
+      _type = t.type;
+      _amount = t.amountSubunits / 100.0;
+      _debitAccountId = t.debitAccountId;
+      _creditAccountId = t.creditAccountId;
+      _descController.text = t.description;
+      _notesController.text = t.notes ?? '';
+    }
+
+    final initialIndex = [
+      TransactionType.expense,
+      TransactionType.income,
+      TransactionType.transfer,
+    ].indexOf(_type).clamp(0, 2);
+
+    _tabController =
+        TabController(length: 3, vsync: this, initialIndex: initialIndex)
+          ..addListener(() {
+            setState(() {
+              _type = [
+                TransactionType.expense,
+                TransactionType.income,
+                TransactionType.transfer,
+              ][_tabController.index];
+              // Reset category on type change unless it was pre-filled.
+              if (widget.template == null) _category = null;
+            });
+          });
   }
 
   @override
