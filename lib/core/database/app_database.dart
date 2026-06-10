@@ -61,9 +61,11 @@ class Transactions extends Table {
   IntColumn get amount => integer()();
 
   /// Account whose balance decreases (expense) or is the source (transfer).
+  @ReferenceName('debitTransactions')
   TextColumn get debitAccountId => text().references(Accounts, #id)();
 
   /// Account whose balance increases (income) or is the destination (transfer).
+  @ReferenceName('creditTransactions')
   TextColumn get creditAccountId => text().references(Accounts, #id)();
   TextColumn get categoryId => text().nullable().references(Categories, #id)();
   TextColumn get description =>
