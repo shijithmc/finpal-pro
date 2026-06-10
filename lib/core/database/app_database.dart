@@ -43,7 +43,14 @@ class Categories extends Table {
   /// Null = root category. Non-null = sub-category (PBI-011).
   TextColumn get parentId => text().nullable().references(Categories, #id)();
   TextColumn get type => textEnum<CategoryType>()();
+
+  /// Legacy int codepoint from v1 — kept for migration compatibility.
+  /// Use [icon] instead. Will be removed in a future schema version.
   IntColumn get iconCode => integer().nullable()();
+
+  /// CategoryIcon enum name — tree-shakeable. Added in schema v2.
+  TextColumn get icon => text().nullable()();
+
   TextColumn get colorHex => text().nullable()();
   BoolColumn get isSystem => boolean().withDefault(const Constant(false))();
   IntColumn get sortOrder => integer().withDefault(const Constant(0))();
@@ -94,6 +101,21 @@ class MonthlyAggregates extends Table {
   Set<Column> get primaryKey => {accountId, year, month};
 }
 
+/// Monthly spend budget per category. Added in schema v3 (PBI-002).
+@DataClassName('BudgetData')
+class Budgets extends Table {
+  TextColumn get id => text()();
+  TextColumn get categoryId => text().references(Categories, #id)();
+  IntColumn get year => integer()();
+  IntColumn get month => integer()(); // 1–12
+
+  /// Budget limit in paise (smallest currency unit).
+  IntColumn get limitPaise => integer()();
+
+  @override
+  Set<Column> get primaryKey => {id};
+}
+
 @DataClassName('SecurityConfigData')
 class SecurityConfigs extends Table {
   /// Singleton row — always id = 1.
@@ -109,6 +131,33 @@ class SecurityConfigs extends Table {
   Set<Column> get primaryKey => {id};
 }
 
+// ─── Analytics value objects ─────────────────────────────────────────────────
+
+/// Aggregated income/expense totals for one calendar month across all accounts.
+final class MonthlyTotals {
+  final int year;
+  final int month;
+
+  /// Total income in paise.
+  final int incomePaise;
+
+  /// Total expense in paise.
+  final int expensePaise;
+
+  const MonthlyTotals({
+    required this.year,
+    required this.month,
+    required this.incomePaise,
+    required this.expensePaise,
+  });
+
+  double get incomeMajorUnits => incomePaise / 100.0;
+  double get expenseMajorUnits => expensePaise / 100.0;
+
+  /// Returns a [DateTime] representing the first day of this month.
+  DateTime get date => DateTime(year, month);
+}
+
 // ─── Database ────────────────────────────────────────────────────────────────
 
 @DriftDatabase(
@@ -117,6 +166,7 @@ class SecurityConfigs extends Table {
     Categories,
     Transactions,
     MonthlyAggregates,
+    Budgets,
     SecurityConfigs,
   ],
 )
@@ -130,7 +180,7 @@ class AppDatabase extends _$AppDatabase {
   }
 
   @override
-  int get schemaVersion => 1;
+  int get schemaVersion => 3;
 
   @override
   MigrationStrategy get migration => buildMigrationStrategy(this);
@@ -234,6 +284,104 @@ class AppDatabase extends _$AppDatabase {
             ),
           );
     }
+  }
+
+  // ─── Aggregate rebuild (used after restore) ───────────────────────────────
+
+  /// Recomputes all monthly_aggregates from the transactions table.
+  /// Called after a backup restore — do NOT call during normal writes.
+  Future<void> rebuildAllMonthlyAggregates() async {
+    await delete(monthlyAggregates).go();
+    final txList = await select(transactions).get();
+    for (final tx in txList) {
+      final date = DateTime.parse(tx.transactionDate);
+      await _upsertMonthlyAggregates(
+        debitAccountId: tx.debitAccountId,
+        creditAccountId: tx.creditAccountId,
+        amount: tx.amount,
+        txType: tx.type,
+        year: date.year,
+        month: date.month,
+      );
+    }
+  }
+
+  // ─── Budgets DAL ──────────────────────────────────────────────────────────
+
+  /// Returns all budgets for a given month/year.
+  Future<List<BudgetData>> getBudgetsForMonth(int year, int month) {
+    return (select(
+      budgets,
+    )..where((b) => b.year.equals(year) & b.month.equals(month))).get();
+  }
+
+  /// Returns total expense per category for a given month across all accounts.
+  Future<Map<String, int>> getCategoryExpensesForMonth(
+    int year,
+    int month,
+  ) async {
+    final rows = await customSelect(
+      'SELECT category_id, SUM(amount) as total '
+      'FROM transactions '
+      'WHERE type = ? AND substr(transaction_date, 1, 7) = ? '
+      'AND category_id IS NOT NULL '
+      'GROUP BY category_id',
+      variables: [
+        Variable.withString('expense'),
+        Variable.withString('$year-${month.toString().padLeft(2, '0')}'),
+      ],
+      readsFrom: {transactions},
+    ).get();
+    return {
+      for (final r in rows) r.read<String>('category_id'): r.read<int>('total'),
+    };
+  }
+
+  // ─── Analytics DAL ────────────────────────────────────────────────────────
+
+  /// Returns expense totals grouped by category for a given month.
+  Future<Map<String, int>> getCategoryBreakdown(int year, int month) =>
+      getCategoryExpensesForMonth(year, month);
+
+  /// Returns monthly income and expense totals for the last [months] months.
+  Future<List<MonthlyAggregateData>> getMonthlyTrend(
+    String accountId,
+    int months,
+  ) async {
+    return (select(monthlyAggregates)
+          ..where((m) => m.accountId.equals(accountId))
+          ..orderBy([
+            (m) => OrderingTerm(expression: m.year, mode: OrderingMode.desc),
+            (m) => OrderingTerm(expression: m.month, mode: OrderingMode.desc),
+          ])
+          ..limit(months))
+        .get();
+  }
+
+  /// Returns summed income and expense across ALL accounts for the last [months] months.
+  /// Returns a list of [MonthlyTotals] ordered newest-first.
+  Future<List<MonthlyTotals>> getGlobalMonthlyTrend(int months) async {
+    final rows = await customSelect(
+      'SELECT year, month, '
+      '  SUM(total_income) AS income, '
+      '  SUM(total_expense) AS expense '
+      'FROM monthly_aggregates '
+      'GROUP BY year, month '
+      'ORDER BY year DESC, month DESC '
+      'LIMIT ?',
+      variables: [Variable.withInt(months)],
+      readsFrom: {monthlyAggregates},
+    ).get();
+    return rows
+        .map(
+          (r) => MonthlyTotals(
+            year: r.read<int>('year'),
+            month: r.read<int>('month'),
+            incomePaise: r.read<int>('income'),
+            expensePaise: r.read<int>('expense'),
+          ),
+        )
+        .toList();
   }
 
   /// FTS5 full-text search across description and notes.

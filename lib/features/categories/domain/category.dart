@@ -1,13 +1,20 @@
 import 'package:equatable/equatable.dart';
 
 import '../../../core/database/app_database.dart';
+import 'category_icon.dart';
 
 final class Category extends Equatable {
   final String id;
   final String name;
   final String? parentId;
   final CategoryType type;
+
+  /// Tree-shakeable enum icon. Preferred over [iconCode].
+  final CategoryIcon? iconEnum;
+
+  /// Legacy int codepoint — retained for data compatibility; prefer [iconEnum].
   final int? iconCode;
+
   final String? colorHex;
   final bool isSystem;
   final int sortOrder;
@@ -18,6 +25,7 @@ final class Category extends Equatable {
     required this.name,
     this.parentId,
     required this.type,
+    this.iconEnum,
     this.iconCode,
     this.colorHex,
     required this.isSystem,
@@ -31,6 +39,7 @@ final class Category extends Equatable {
       name: data.name,
       parentId: data.parentId,
       type: data.type,
+      iconEnum: parseCategoryIcon(data.icon),
       iconCode: data.iconCode,
       colorHex: data.colorHex,
       isSystem: data.isSystem,
@@ -46,6 +55,7 @@ final class Category extends Equatable {
     name,
     parentId,
     type,
+    iconEnum,
     iconCode,
     colorHex,
     isSystem,
@@ -77,6 +87,7 @@ List<Category> buildCategoryTree(List<Category> flat) {
       name: cat.name,
       parentId: cat.parentId,
       type: cat.type,
+      iconEnum: cat.iconEnum,
       iconCode: cat.iconCode,
       colorHex: cat.colorHex,
       isSystem: cat.isSystem,

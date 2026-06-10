@@ -35,6 +35,9 @@ dependencies:
   # Calculator: safe expression evaluation (no eval())
   math_expressions: ^2.4.0
 
+  # File sharing (backup/export — PBI-008)
+  share_plus: ^10.1.4
+
   # Utilities
   uuid: ^4.5.1
   intl: ^0.20.1

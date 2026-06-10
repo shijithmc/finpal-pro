@@ -102,5 +102,57 @@ void main() {
       )..where((c) => c.id.equals('cat-child'))).getSingle();
       expect(child.parentId, 'cat-root');
     });
+
+    // ── Schema v2: icon column on categories ────────────────────────────────
+
+    test('categories_iconColumn_canWriteAndReadEnumName', () async {
+      await db.into(db.categories).insertOnConflictUpdate(
+        CategoriesCompanion.insert(
+          id: 'cat-icon',
+          name: 'Icon Test',
+          type: CategoryType.expense,
+          icon: const Value('foodDining'),
+        ),
+      );
+      final row = await (db.select(
+        db.categories,
+      )..where((c) => c.id.equals('cat-icon'))).getSingle();
+      expect(row.icon, 'foodDining');
+    });
+
+    // ── Schema v3: Budgets table ─────────────────────────────────────────────
+
+    test('budgetsTable_canInsertAndQuery', () async {
+      const now = '2026-06-10T12:00:00.000';
+      await db.into(db.accounts).insert(
+        AccountsCompanion.insert(
+          id: 'acc-budget',
+          name: 'Budget Test',
+          type: AccountType.cash,
+          createdAt: now,
+        ),
+      );
+      await db.into(db.categories).insertOnConflictUpdate(
+        CategoriesCompanion.insert(
+          id: 'cat-budget',
+          name: 'Budget Category',
+          type: CategoryType.expense,
+        ),
+      );
+      await db.into(db.budgets).insert(
+        BudgetsCompanion.insert(
+          id: 'bgt-1',
+          categoryId: 'cat-budget',
+          year: 2026,
+          month: 6,
+          limitPaise: 500000, // ₹5000
+        ),
+      );
+      final rows = await (db.select(db.budgets)
+            ..where((b) => b.year.equals(2026) & b.month.equals(6)))
+          .get();
+      expect(rows.length, 1);
+      expect(rows.first.limitPaise, 500000);
+    });
   });
 }
