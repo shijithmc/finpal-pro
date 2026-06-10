@@ -6,7 +6,7 @@ on:
   pull_request:
     branches: [main, master]
   release:
-    types: [published] # full signed release build on tag push
+    types: [published]
 
 jobs:
   # ── Lint / test ─────────────────────────────────────────────────────────────
@@ -40,12 +40,11 @@ jobs:
       - name: Unit tests
         run: flutter test test/ --reporter=compact
 
-  # ── Debug APK (every PR / push — no secrets required) ───────────────────────
-  build-debug:
-    name: Build Debug APK
+  # ── Flutter Web build (every PR / push) ─────────────────────────────────────
+  build-web:
+    name: Build Flutter Web
     needs: test
     runs-on: ubuntu-latest
-    if: github.event_name != 'release'
 
     steps:
       - name: Checkout
@@ -58,138 +57,100 @@ jobs:
           channel: stable
           cache: true
 
+      - name: Enable Flutter Web
+        run: flutter config --enable-web
+
       - name: Install dependencies
         run: flutter pub get
 
       - name: Generate Drift code
         run: dart run build_runner build --delete-conflicting-outputs
 
-      - name: Build Debug APK
-        run: flutter build apk --debug --target-platform android-arm64
+      - name: Build Flutter Web
+        run: |
+          flutter build web \
+            --release \
+            --dart-define=APP_ENV=production \
+            --web-renderer canvaskit
 
-      - name: Upload debug APK
+      - name: Upload web artifact
         uses: actions/upload-artifact@v4
         with:
-          name: finpal-pro-debug-apk
-          path: build/app/outputs/flutter-apk/app-debug.apk
+          name: finpal-pro-web-${{ github.sha }}
+          path: build/web/
           retention-days: 7
 
-  # ── Release APK + AAB (release tag only — requires keystore secrets) ─────────
-  build-release:
-    name: Build Release APK + AAB
-    needs: test
+  # ── Deploy Flutter Web to S3 + CloudFront ────────────────────────────────────
+  # Runs on every push to main (continuous deploy) and on GitHub Release.
+  deploy-web:
+    name: Deploy Flutter Web to S3
+    needs: build-web
     runs-on: ubuntu-latest
-    if: github.event_name == 'release'
+    if: github.ref == 'refs/heads/main' || github.event_name == 'release'
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up Flutter
-        uses: subosito/flutter-action@v2
+      - name: Download web artifact
+        uses: actions/download-artifact@v4
         with:
-          flutter-version: "3.41.9"
-          channel: stable
-          cache: true
+          name: finpal-pro-web-${{ github.sha }}
+          path: build/web
 
-      - name: Install dependencies
-        run: flutter pub get
-
-      - name: Generate Drift code
-        run: dart run build_runner build --delete-conflicting-outputs
-
-      # Decode the keystore from the base64 GitHub secret.
-      # To create: base64 -w 0 android/finpal-pro-release.jks > keystore.b64
-      # Then add the content as secret KEYSTORE_BASE64 in GitHub repo settings.
-      - name: Decode keystore
-        env:
-          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
-        run: |
-          echo "$KEYSTORE_BASE64" | base64 --decode > android/finpal-pro-release.jks
-
-      - name: Write key.properties
-        env:
-          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
-          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-          STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
-        run: |
-          cat > android/key.properties <<KEYEOF
-          storeFile=finpal-pro-release.jks
-          storePassword=${STORE_PASSWORD}
-          keyAlias=${KEY_ALIAS}
-          keyPassword=${KEY_PASSWORD}
-          KEYEOF
-
-      - name: Read version
-        id: version
-        run: |
-          VERSION=$(grep '^version:' pubspec.yaml | awk '{print $2}' | tr -d '\r')
-          VERSION_NAME="${VERSION%%+*}"
-          echo "version_name=$VERSION_NAME" >> "$GITHUB_OUTPUT"
-
-      - name: Build release APK (arm64)
-        run: |
-          flutter build apk \
-            --release \
-            --target-platform android-arm64 \
-            --dart-define=APP_ENV=production
-
-      - name: Build release AAB (Play Store)
-        run: |
-          flutter build appbundle \
-            --release \
-            --dart-define=APP_ENV=production
-
-      - name: Stage artifacts
-        run: |
-          VERSION="${{ steps.version.outputs.version_name }}"
-          mkdir -p dist
-          cp build/app/outputs/flutter-apk/app-release.apk \
-             "dist/finpal-pro-${VERSION}-release.apk"
-          cp build/app/outputs/bundle/release/app-release.aab \
-             "dist/finpal-pro-${VERSION}-release.aab"
-          cd dist && sha256sum \
-            "finpal-pro-${VERSION}-release.apk" \
-            "finpal-pro-${VERSION}-release.aab" \
-            > "finpal-pro-${VERSION}-checksums.sha256"
-
-      - name: Upload release APK
-        uses: actions/upload-artifact@v4
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
         with:
-          name: finpal-pro-${{ steps.version.outputs.version_name }}-release-apk
-          path: dist/finpal-pro-${{ steps.version.outputs.version_name }}-release.apk
-          retention-days: 90
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ap-south-1
 
-      - name: Upload release AAB
-        uses: actions/upload-artifact@v4
-        with:
-          name: finpal-pro-${{ steps.version.outputs.version_name }}-release-aab
-          path: dist/finpal-pro-${{ steps.version.outputs.version_name }}-release.aab
-          retention-days: 90
-
-      - name: Upload checksums
-        uses: actions/upload-artifact@v4
-        with:
-          name: finpal-pro-${{ steps.version.outputs.version_name }}-checksums
-          path: dist/finpal-pro-${{ steps.version.outputs.version_name }}-checksums.sha256
-          retention-days: 90
-
-      # Attach all artifacts directly to the GitHub Release page.
-      - name: Attach to GitHub Release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Resolve S3 bucket + CloudFront ID from SSM
+        id: ssm
         run: |
-          VERSION="${{ steps.version.outputs.version_name }}"
-          gh release upload "${{ github.event.release.tag_name }}" \
-            "dist/finpal-pro-${VERSION}-release.apk" \
-            "dist/finpal-pro-${VERSION}-release.aab" \
-            "dist/finpal-pro-${VERSION}-checksums.sha256" \
-            --clobber
+          BUCKET=$(aws ssm get-parameter \
+            --name "/finpal-pro/distribution/bucket-name" \
+            --query "Parameter.Value" --output text)
+          DIST_ID=$(aws ssm get-parameter \
+            --name "/finpal-pro/distribution/id" \
+            --query "Parameter.Value" --output text)
+          echo "bucket=$BUCKET"   >> "$GITHUB_OUTPUT"
+          echo "dist_id=$DIST_ID" >> "$GITHUB_OUTPUT"
+
+      # Content-hashed files: JS/WASM/assets — immutable, 1-year cache.
+      - name: Sync immutable assets to S3
+        run: |
+          aws s3 sync build/web "s3://${{ steps.ssm.outputs.bucket }}" \
+            --delete \
+            --exclude "*.html" \
+            --exclude "flutter_service_worker.js" \
+            --cache-control "public, max-age=31536000, immutable"
+
+      # HTML + service worker: no-cache — ensures users get the latest version.
+      - name: Sync HTML and service worker to S3
+        run: |
+          aws s3 sync build/web "s3://${{ steps.ssm.outputs.bucket }}" \
+            --exclude "*" \
+            --include "*.html" \
+            --include "flutter_service_worker.js" \
+            --cache-control "no-cache, no-store, must-revalidate"
+
+      - name: Invalidate CloudFront cache
+        run: |
+          INVALIDATION_ID=$(aws cloudfront create-invalidation \
+            --distribution-id "${{ steps.ssm.outputs.dist_id }}" \
+            --paths "/*" \
+            --query "Invalidation.Id" --output text)
+          echo "CloudFront invalidation: $INVALIDATION_ID"
+
+      - name: Print app URL
+        run: |
+          DOMAIN=$(aws ssm get-parameter \
+            --name "/finpal-pro/distribution/domain" \
+            --query "Parameter.Value" --output text)
+          echo "App live at: https://${DOMAIN}"
 
   # ── Deploy AWS infrastructure via CDK (release tag only) ─────────────────────
   deploy-aws:
     name: Deploy AWS Infrastructure (CDK)
-    needs: build-release
+    needs: deploy-web
     runs-on: ubuntu-latest
     if: github.event_name == 'release'
 
@@ -214,14 +175,6 @@ jobs:
 
       - name: Build CDK project
         run: dotnet build infrastructure/cdk/src --configuration Release --nologo -q
-
-      - name: CDK synth (validate templates)
-        run: cdk synth
-        working-directory: infrastructure/cdk
-        env:
-          APP_ENV: production
-          CDK_DEFAULT_ACCOUNT: ${{ secrets.AWS_ACCOUNT_ID }}
-          CDK_DEFAULT_REGION: ap-south-1
 
       - name: CDK deploy (all stacks)
         run: cdk deploy --all --require-approval never --outputs-file cdk-outputs.json

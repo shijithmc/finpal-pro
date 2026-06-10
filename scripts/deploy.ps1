@@ -1,208 +1,121 @@
 <#
 .SYNOPSIS
-    FinPal Pro — Release Deployment Script (PowerShell / Windows)
+    FinPal Pro Flutter Web build script (PowerShell)
 
-.DESCRIPTION
-    Produces:
-      dist\finpal-pro-<version>-release.apk
-      dist\finpal-pro-<version>-release.aab
-
-.PARAMETER SkipTests
-    Skip flutter test (useful when tests already ran).
-
-.PARAMETER ApkOnly
-    Build APK only (skip AAB).
-
-.PARAMETER AabOnly
-    Build AAB only (skip APK).
-
-.PARAMETER Clean
-    Run flutter clean before building.
+.PARAMETER SkipTests   Skip flutter test
+.PARAMETER Clean       Run flutter clean before build
+.PARAMETER Deploy      Sync build/web/ to S3 + invalidate CloudFront
+.PARAMETER Bucket      S3 bucket override (default: read from SSM)
+.PARAMETER DistId      CloudFront distribution ID override (default: read from SSM)
 
 .EXAMPLE
     .\scripts\deploy.ps1
-    .\scripts\deploy.ps1 -SkipTests -ApkOnly
-    .\scripts\deploy.ps1 -Clean
-
-.NOTES
-    Required env vars when android\key.properties is absent:
-      $env:KEY_ALIAS      — keystore key alias
-      $env:KEY_PASSWORD   — key password
-      $env:STORE_PASSWORD — keystore store password
-      $env:KEYSTORE_PATH  — absolute path to .jks (default: android\finpal-pro-release.jks)
+    .\scripts\deploy.ps1 -SkipTests -Deploy
+    .\scripts\deploy.ps1 -Clean -Deploy -Bucket my-bucket -DistId E1ABCD1234
 #>
-[CmdletBinding()]
 param(
-    [switch]$SkipTests,
-    [switch]$ApkOnly,
-    [switch]$AabOnly,
-    [switch]$Clean
+    [switch] $SkipTests,
+    [switch] $Clean,
+    [switch] $Deploy,
+    [string] $Bucket  = "",
+    [string] $DistId  = ""
 )
 
-Set-StrictMode -Version Latest
-$ErrorActionPreference = 'Stop'
+$ErrorActionPreference = "Stop"
+$RepoRoot = Resolve-Path "$PSScriptRoot\.."
 
-# ── Helpers ───────────────────────────────────────────────────────────────────
-function Write-Step  { param($n, $msg) Write-Host "[STEP $n]  $msg" -ForegroundColor Cyan }
-function Write-Ok    { param($msg)     Write-Host "[OK]      $msg" -ForegroundColor Green }
-function Write-Warn  { param($msg)     Write-Host "[WARN]    $msg" -ForegroundColor Yellow }
-function Write-Fail  { param($msg)     Write-Host "[ERROR]   $msg" -ForegroundColor Red; exit 1 }
-
-function Invoke-Cmd {
-    param([string]$cmd, [string[]]$args)
-    & $cmd @args
-    if ($LASTEXITCODE -ne 0) { Write-Fail "Command failed: $cmd $args" }
+function Write-Step { param($msg) Write-Host "`n== $msg ==" -ForegroundColor Green }
+function Write-Info { param($msg) Write-Host "[INFO]  $msg" -ForegroundColor Cyan }
+function Write-Warn { param($msg) Write-Host "[WARN]  $msg" -ForegroundColor Yellow }
+function Invoke-Step {
+    param([string[]]$Cmd)
+    & $Cmd[0] $Cmd[1..($Cmd.Length-1)]
+    if ($LASTEXITCODE -ne 0) { throw "Failed (exit $LASTEXITCODE): $($Cmd -join ' ')" }
 }
 
-# ── Resolve repo root ─────────────────────────────────────────────────────────
-$ScriptDir  = Split-Path -Parent $MyInvocation.MyCommand.Path
-$RepoRoot   = Split-Path -Parent $ScriptDir
 Set-Location $RepoRoot
 
-# ── Step 0: Pull latest from origin/main ─────────────────────────────────────
-Write-Step 0 "Syncing with origin/main …"
-git fetch origin
-$CurrentBranch = git rev-parse --abbrev-ref HEAD
-if ($CurrentBranch -eq 'main' -or $CurrentBranch -eq 'master') {
-    $local  = git rev-parse HEAD
-    $remote = git rev-parse "origin/$CurrentBranch"
-    if ($local -ne $remote) {
-        Write-Host "  Fast-forwarding $CurrentBranch → origin/$CurrentBranch"
-        git merge --ff-only "origin/$CurrentBranch"
-        if ($LASTEXITCODE -ne 0) { Write-Fail "Merge fast-forward failed — uncommitted changes?" }
-    } else {
-        Write-Host "  Already up to date with origin/$CurrentBranch"
-    }
-} else {
-    Write-Warn "Not on main/master (on '$CurrentBranch') — skipping pull."
-}
-Write-Ok "Step 0 complete"
+# ── Step 1: Validate ─────────────────────────────────────────
+Write-Step "1 — Validate"
+if (-not (Get-Command flutter -ErrorAction SilentlyContinue)) { throw "flutter not found in PATH" }
+$flutterVer = (flutter --version 2>&1 | Select-Object -First 1)
+Write-Info "Flutter: $flutterVer"
 
-# ── Step 1: Validate signing config ──────────────────────────────────────────
-Write-Step 1 "Checking signing config …"
-$KeyProps = Join-Path $RepoRoot 'android\key.properties'
-if (Test-Path $KeyProps) {
-    Write-Host "  Using android\key.properties"
-} elseif ($env:KEY_ALIAS -and $env:KEY_PASSWORD -and $env:STORE_PASSWORD) {
-    Write-Host "  Using environment variables for signing"
-    $KsPath = if ($env:KEYSTORE_PATH) { $env:KEYSTORE_PATH } else { Join-Path $RepoRoot 'android\finpal-pro-release.jks' }
-    if (-not (Test-Path $KsPath)) {
-        Write-Fail "KEYSTORE_PATH='$KsPath' not found. Provide the .jks file."
-    }
-} else {
-    Write-Warn "No key.properties and no signing env vars — build will use debug key."
-    Write-Warn "Resulting APK/AAB will NOT be accepted by Google Play."
-}
-Write-Ok "Step 1 complete"
-
-# ── Step 2: Read version from pubspec.yaml ────────────────────────────────────
-Write-Step 2 "Reading version …"
-$PubspecPath = Join-Path $RepoRoot 'pubspec.yaml'
-$VersionLine = (Get-Content $PubspecPath | Where-Object { $_ -match '^version:' } | Select-Object -First 1)
-if (-not $VersionLine) { Write-Fail "Could not read version from pubspec.yaml" }
-$FullVersion = ($VersionLine -split ':\s*')[1].Trim()
-$VersionName = ($FullVersion -split '\+')[0]
-$VersionCode = if ($FullVersion -match '\+(\d+)$') { $Matches[1] } else { '1' }
-Write-Host "  Version: $VersionName (build $VersionCode)"
-Write-Ok "Step 2 complete"
-
-# ── Step 3: Optional clean ────────────────────────────────────────────────────
+# ── Step 2: Clean ────────────────────────────────────────────
 if ($Clean) {
-    Write-Step 3 "Running flutter clean …"
-    Invoke-Cmd flutter @('clean')
-    Write-Ok "Step 3 complete"
-} else {
-    Write-Step 3 "Skipping flutter clean (pass -Clean to force)"
+    Write-Step "2 — flutter clean"
+    Invoke-Step @("flutter","clean")
 }
 
-# ── Step 4: Install dependencies ─────────────────────────────────────────────
-Write-Step 4 "Installing dependencies …"
-Invoke-Cmd flutter @('pub', 'get')
-Write-Ok "Step 4 complete"
+# ── Step 3: Dependencies ─────────────────────────────────────
+Write-Step "3 — flutter pub get"
+Invoke-Step @("flutter","pub","get")
 
-# ── Step 5: Drift code generation ────────────────────────────────────────────
-Write-Step 5 "Generating Drift database code …"
-Invoke-Cmd dart @('run', 'build_runner', 'build', '--delete-conflicting-outputs')
-Write-Ok "Step 5 complete"
+# ── Step 4: Code generation ───────────────────────────────────
+Write-Step "4 — build_runner"
+Invoke-Step @("dart","run","build_runner","build","--delete-conflicting-outputs")
 
-# ── Step 6: Format check ─────────────────────────────────────────────────────
-Write-Step 6 "Checking code formatting …"
-& dart format --set-exit-if-changed lib/ test/
-if ($LASTEXITCODE -ne 0) {
-    Write-Fail "Format check failed. Run: dart format lib/ test/"
-}
-Write-Ok "Step 6 complete"
+# ── Step 5: Format check ─────────────────────────────────────
+Write-Step "5 — dart format check"
+dart format --set-exit-if-changed lib/ test/
+if ($LASTEXITCODE -ne 0) { throw "Format check failed — run: dart format lib/ test/" }
 
-# ── Step 7: Static analysis ───────────────────────────────────────────────────
-Write-Step 7 "Running static analysis …"
-Invoke-Cmd flutter @('analyze', '--fatal-infos')
-Write-Ok "Step 7 complete"
+# ── Step 6: Analyze ──────────────────────────────────────────
+Write-Step "6 — dart analyze"
+Invoke-Step @("flutter","analyze","--fatal-infos")
 
-# ── Step 8: Unit tests ────────────────────────────────────────────────────────
+# ── Step 7: Tests ────────────────────────────────────────────
 if (-not $SkipTests) {
-    Write-Step 8 "Running unit tests …"
-    Invoke-Cmd flutter @('test', 'test/', '--reporter=compact')
-    Write-Ok "Step 8 complete"
+    Write-Step "7 — flutter test"
+    Invoke-Step @("flutter","test","test/","--reporter=compact")
 } else {
-    Write-Warn "Step 8: Unit tests skipped (-SkipTests)"
+    Write-Info "Step 7 — tests skipped (-SkipTests)"
 }
 
-# ── Step 9: Create output directory ──────────────────────────────────────────
-$OutputDir = if ($env:OUTPUT_DIR) { $env:OUTPUT_DIR } else { Join-Path $RepoRoot 'dist' }
-New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
-Write-Step 9 "Artifacts → $OutputDir"
+# ── Step 8: Flutter Web build ─────────────────────────────────
+Write-Step "8 — flutter build web"
+Invoke-Step @("flutter","build","web","--release","--dart-define=APP_ENV=production","--web-renderer","canvaskit")
 
-# ── Step 10: Build release APK ───────────────────────────────────────────────
-if (-not $AabOnly) {
-    Write-Step 10 "Building release APK (arm64) …"
-    Invoke-Cmd flutter @(
-        'build', 'apk',
-        '--release',
-        '--target-platform', 'android-arm64',
-        '--dart-define=APP_ENV=production'
-    )
-    $ApkSrc  = Join-Path $RepoRoot 'build\app\outputs\flutter-apk\app-release.apk'
-    $ApkDest = Join-Path $OutputDir "finpal-pro-$VersionName-release.apk"
-    Copy-Item $ApkSrc $ApkDest -Force
-    $ApkSize = (Get-Item $ApkDest).Length / 1MB
-    Write-Ok ("Step 10: APK built → $ApkDest ({0:N1} MB)" -f $ApkSize)
-} else {
-    Write-Host "[STEP 10] APK build skipped (-AabOnly)"
+$WebOut = Join-Path $RepoRoot "build\web"
+Write-Info "Web output: $WebOut"
+
+# ── Step 9: Deploy to S3 (optional) ──────────────────────────
+if ($Deploy) {
+    Write-Step "9 — Deploy to S3 + CloudFront"
+    if (-not (Get-Command aws -ErrorAction SilentlyContinue)) { throw "aws CLI not found — required for -Deploy" }
+
+    if (-not $Bucket) {
+        $Bucket = aws ssm get-parameter --name "/finpal-pro/distribution/bucket-name" --query "Parameter.Value" --output text
+        if ($LASTEXITCODE -ne 0) { throw "Cannot read bucket from SSM. Pass -Bucket <name>." }
+    }
+    if (-not $DistId) {
+        $DistId = aws ssm get-parameter --name "/finpal-pro/distribution/id" --query "Parameter.Value" --output text
+        if ($LASTEXITCODE -ne 0) { throw "Cannot read distribution ID from SSM. Pass -DistId <id>." }
+    }
+
+    Write-Info "Bucket    : s3://$Bucket"
+    Write-Info "CloudFront: $DistId"
+
+    # Content-hashed assets — immutable 1 year
+    aws s3 sync $WebOut "s3://$Bucket" --delete `
+        --exclude "*.html" --exclude "flutter_service_worker.js" `
+        --cache-control "public, max-age=31536000, immutable"
+    if ($LASTEXITCODE -ne 0) { throw "s3 sync (assets) failed" }
+
+    # HTML + service worker — no-cache
+    aws s3 sync $WebOut "s3://$Bucket" `
+        --exclude "*" --include "*.html" --include "flutter_service_worker.js" `
+        --cache-control "no-cache, no-store, must-revalidate"
+    if ($LASTEXITCODE -ne 0) { throw "s3 sync (html) failed" }
+
+    $InvalidationId = aws cloudfront create-invalidation `
+        --distribution-id $DistId --paths "/*" `
+        --query "Invalidation.Id" --output text
+    Write-Info "Invalidation: $InvalidationId (propagating ~30-60s)"
 }
 
-# ── Step 11: Build release AAB ────────────────────────────────────────────────
-if (-not $ApkOnly) {
-    Write-Step 11 "Building release AAB (Play Store) …"
-    Invoke-Cmd flutter @(
-        'build', 'appbundle',
-        '--release',
-        '--dart-define=APP_ENV=production'
-    )
-    $AabSrc  = Join-Path $RepoRoot 'build\app\outputs\bundle\release\app-release.aab'
-    $AabDest = Join-Path $OutputDir "finpal-pro-$VersionName-release.aab"
-    Copy-Item $AabSrc $AabDest -Force
-    $AabSize = (Get-Item $AabDest).Length / 1MB
-    Write-Ok ("Step 11: AAB built → $AabDest ({0:N1} MB)" -f $AabSize)
-} else {
-    Write-Host "[STEP 11] AAB build skipped (-ApkOnly)"
-}
-
-# ── Step 12: SHA-256 checksums ───────────────────────────────────────────────
-Write-Step 12 "Generating checksums …"
-$ChecksumFile = Join-Path $OutputDir "finpal-pro-$VersionName-checksums.sha256"
-$artifacts = Get-ChildItem -Path $OutputDir -Filter "finpal-pro-$VersionName-release.*" -ErrorAction SilentlyContinue
-$checksumLines = $artifacts | ForEach-Object {
-    $hash = (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower()
-    "$hash  $($_.Name)"
-}
-$checksumLines | Set-Content $ChecksumFile -Encoding UTF8
-Write-Ok "Step 12: Checksums → $ChecksumFile"
-
-# ── Done ──────────────────────────────────────────────────────────────────────
 Write-Host ""
-Write-Host "════════════════════════════════════════════════════════" -ForegroundColor Green
-Write-Host "  FinPal Pro $VersionName — Release build complete"      -ForegroundColor Green
-Write-Host "════════════════════════════════════════════════════════" -ForegroundColor Green
-Write-Host ""
-Get-ChildItem -Path $OutputDir -Filter "finpal-pro-$VersionName-*" |
-    ForEach-Object { Write-Host ("  {0,-50} {1,8:N1} MB" -f $_.Name, ($_.Length / 1MB)) }
+Write-Info "════════════════════════════════════════════════════════"
+Write-Info "  Flutter Web build complete — output: build\web\"
+if ($Deploy) { Write-Info "  Deployed → s3://$Bucket" } else { Write-Info "  Run with -Deploy to push to S3" }
+Write-Info "════════════════════════════════════════════════════════"
