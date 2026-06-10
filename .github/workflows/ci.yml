@@ -38,7 +38,9 @@ jobs:
         run: flutter test test/
 
       - name: Build APK (release)
-        run: flutter build apk --release --target-platform android-arm64
+        # --no-tree-shake-icons: categories use runtime IconData(codePoint) from DB.
+        # Replace with enum-based icon set in Sprint 2 to re-enable tree shaking.
+        run: flutter build apk --release --target-platform android-arm64 --no-tree-shake-icons
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
