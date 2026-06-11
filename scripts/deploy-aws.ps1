@@ -33,9 +33,10 @@
     .\scripts\deploy-aws.ps1 -DryRun
 #>
 param(
-    [string] $Env          = ($env:APP_ENV        -ne "" ? $env:APP_ENV        : "dev"),
-    [string] $Region       = ($env:AWS_DEFAULT_REGION -ne "" ? $env:AWS_DEFAULT_REGION : "ap-south-1"),
-    [string] $Account      = ($env:CDK_DEFAULT_ACCOUNT -ne "" ? $env:CDK_DEFAULT_ACCOUNT : ""),
+    # Ternary (? :) requires PowerShell 7 - $(if) keeps Windows PowerShell 5.1 compatible
+    [string] $Env          = $(if ($env:APP_ENV)             { $env:APP_ENV }             else { "dev" }),
+    [string] $Region       = $(if ($env:AWS_DEFAULT_REGION)  { $env:AWS_DEFAULT_REGION }  else { "ap-south-1" }),
+    [string] $Account      = $(if ($env:CDK_DEFAULT_ACCOUNT) { $env:CDK_DEFAULT_ACCOUNT } else { "" }),
     [switch] $BootstrapOnly,
     [switch] $SkipBootstrap,
     [string] $Stack        = "",
@@ -55,8 +56,8 @@ function Invoke-Step  {
     if ($LASTEXITCODE -ne 0) { throw "Command failed (exit $LASTEXITCODE): $($Cmd -join ' ')" }
 }
 
-# ── Step 1: Validate prerequisites ───────────────────────────
-Write-Step "1/5 — Validate prerequisites"
+# -- Step 1: Validate prerequisites ---------------------------
+Write-Step "1/5 - Validate prerequisites"
 
 if (-not (Get-Command aws -ErrorAction SilentlyContinue)) {
     throw "AWS CLI not found. Install from https://aws.amazon.com/cli/"
@@ -81,8 +82,8 @@ if (-not $CdkCmd) { throw "CDK CLI not found. Install: npm install -g aws-cdk" }
 $cdkVersion = (& $CdkCmd --version 2>&1) | Select-Object -First 1
 Write-Info "CDK: $CdkCmd ($cdkVersion)"
 
-# ── Step 2: Resolve AWS identity ─────────────────────────────
-Write-Step "2/5 — Resolve AWS identity"
+# -- Step 2: Resolve AWS identity -----------------------------
+Write-Step "2/5 - Resolve AWS identity"
 
 $callerJson = aws sts get-caller-identity --output json 2>&1
 if ($LASTEXITCODE -ne 0) { throw "Cannot reach AWS. Check AWS CLI credentials." }
@@ -95,20 +96,20 @@ Write-Info "Region  : $Region"
 Write-Info "App env : $Env"
 
 if ($caller.Arn -match ":root$") {
-    Write-Warn "Deploying with ROOT credentials — create a least-privilege IAM role before production."
+    Write-Warn "Deploying with ROOT credentials - create a least-privilege IAM role before production."
 }
 
-# ── Step 3: Build CDK project ─────────────────────────────────
-Write-Step "3/5 — Build CDK project (dotnet build)"
+# -- Step 3: Build CDK project ---------------------------------
+Write-Step "3/5 - Build CDK project (dotnet build)"
 
 Push-Location (Join-Path $CdkDir "src")
 try { Invoke-Step @("dotnet","build","--configuration","Release","--nologo","-q") }
 finally { Pop-Location }
 Write-Info "dotnet build: SUCCESS"
 
-# ── Step 4: CDK bootstrap ─────────────────────────────────────
+# -- Step 4: CDK bootstrap -------------------------------------
 if (-not $SkipBootstrap) {
-    Write-Step "4/5 — CDK bootstrap aws://${Account}/${Region}"
+    Write-Step "4/5 - CDK bootstrap aws://${Account}/${Region}"
     $env:CDK_DEFAULT_ACCOUNT = $Account
     $env:CDK_DEFAULT_REGION  = $Region
     $env:APP_ENV             = $Env
@@ -118,13 +119,13 @@ if (-not $SkipBootstrap) {
     finally { Pop-Location }
     Write-Info "Bootstrap: COMPLETE"
 } else {
-    Write-Step "4/5 — CDK bootstrap skipped (--SkipBootstrap)"
+    Write-Step "4/5 - CDK bootstrap skipped (--SkipBootstrap)"
 }
 
-if ($BootstrapOnly) { Write-Info "Bootstrap-only mode — done."; exit 0 }
+if ($BootstrapOnly) { Write-Info "Bootstrap-only mode - done."; exit 0 }
 
-# ── Step 5: CDK synth + deploy ────────────────────────────────
-Write-Step "5/5 — CDK deploy"
+# -- Step 5: CDK synth + deploy --------------------------------
+Write-Step "5/5 - CDK deploy"
 
 $env:CDK_DEFAULT_ACCOUNT = $Account
 $env:CDK_DEFAULT_REGION  = $Region
@@ -135,9 +136,9 @@ $OutputsFile = Join-Path $RepoRoot "cdk-outputs.json"
 Push-Location $CdkDir
 try {
     if ($DryRun) {
-        Write-Info "Dry-run mode — running cdk synth only"
+        Write-Info "Dry-run mode - running cdk synth only"
         Invoke-Step @($CdkCmd,"synth")
-        Write-Info "Synth: SUCCESS — no resources deployed"
+        Write-Info "Synth: SUCCESS - no resources deployed"
     } else {
         $deployArgs = @($CdkCmd,"deploy","--require-approval","never","--outputs-file",$OutputsFile)
         if ($Stack) { $deployArgs += $Stack } else { $deployArgs += "--all" }
@@ -148,8 +149,31 @@ try {
 }
 
 Write-Host ""
-Write-Info "════════════════════════════════════════════════════════"
+Write-Info "========================================================"
 Write-Info "  CDK deployment complete"
 Write-Info "  Outputs written to: $OutputsFile"
 Write-Info "  Environment: $Env | Region: $Region | Account: $Account"
-Write-Info "════════════════════════════════════════════════════════"
+
+if (-not $DryRun) {
+    if (Test-Path $OutputsFile) {
+        try {
+            $outputs  = Get-Content $OutputsFile -Raw | ConvertFrom-Json
+            $AppUrl   = $outputs.'FinpalDistributionStack'.'DistributionDomainOutput'
+            $ApiUrl   = $outputs.'FinpalFoundationStack'.'ApiEndpointOutput'
+            $PoolId   = $outputs.'FinpalFoundationStack'.'UserPoolIdOutput'
+            $ClientId = $outputs.'FinpalFoundationStack'.'UserPoolClientIdOutput'
+            $Table    = $outputs.'FinpalFoundationStack'.'TableNameOutput'
+            Write-Host ""
+            if ($AppUrl)   { Write-Info "  App URL         : $AppUrl" }
+            if ($ApiUrl)   { Write-Info "  API Endpoint    : $ApiUrl" }
+            if ($PoolId)   { Write-Info "  Cognito Pool ID : $PoolId" }
+            if ($ClientId) { Write-Info "  Cognito Client  : $ClientId" }
+            if ($Table)    { Write-Info "  DynamoDB Table  : $Table" }
+        } catch {
+            Write-Warn "  Could not parse cdk-outputs.json - check $OutputsFile manually for URLs"
+        }
+    } else {
+        Write-Warn "  cdk-outputs.json not found - URLs unavailable"
+    }
+}
+Write-Info "========================================================"

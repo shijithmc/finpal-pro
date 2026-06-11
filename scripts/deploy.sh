@@ -148,6 +148,30 @@ info "════════════════════════�
 info "  Flutter Web build complete — output: build/web/"
 if [[ "$DEPLOY" == "true" ]]; then
   info "  Deployed → s3://$BUCKET"
+else
+  info "  Run with --deploy to push to S3"
+fi
+
+OUTPUTS_FILE="$REPO_ROOT/cdk-outputs.json"
+PYTHON_CMD=""
+command -v python3 &>/dev/null && PYTHON_CMD="python3"
+[[ -z "$PYTHON_CMD" ]] && command -v python &>/dev/null && PYTHON_CMD="python"
+
+if [[ -n "$PYTHON_CMD" && -f "$OUTPUTS_FILE" ]]; then
+  _get() { $PYTHON_CMD -c "import json,sys; d=json.load(open('$OUTPUTS_FILE')); print(d.get('$1',{}).get('$2',''))" 2>/dev/null; }
+  APP_URL=$(_get "FinpalDistributionStack" "DistributionDomainOutput")
+  API_URL=$(_get "FinpalFoundationStack"   "ApiEndpointOutput")
+  POOL_ID=$(_get "FinpalFoundationStack"   "UserPoolIdOutput")
+  CLIENT_ID=$(_get "FinpalFoundationStack" "UserPoolClientIdOutput")
+  TABLE=$(_get "FinpalFoundationStack"     "TableNameOutput")
+  echo ""
+  [[ -n "$APP_URL"   ]] && info "  App URL         : $APP_URL"
+  [[ -n "$API_URL"   ]] && info "  API Endpoint    : $API_URL"
+  [[ -n "$POOL_ID"   ]] && info "  Cognito Pool ID : $POOL_ID"
+  [[ -n "$CLIENT_ID" ]] && info "  Cognito Client  : $CLIENT_ID"
+  [[ -n "$TABLE"     ]] && info "  DynamoDB Table  : $TABLE"
+elif [[ "$DEPLOY" == "true" ]]; then
+  # Fallback — outputs file missing or no python: resolve App URL live from CloudFront
   CF_DOMAIN=$(aws cloudfront get-distribution \
     --id "$DIST_ID" \
     --query "Distribution.DomainName" \
@@ -155,6 +179,6 @@ if [[ "$DEPLOY" == "true" ]]; then
   [[ -n "$CF_DOMAIN" ]] && info "  App URL   : https://$CF_DOMAIN" || \
     warn "  Could not resolve CloudFront domain — check distribution $DIST_ID"
 else
-  info "  Run with --deploy to push to S3"
+  warn "  cdk-outputs.json not found — run ./scripts/deploy-aws.sh to deploy infrastructure first"
 fi
 info "════════════════════════════════════════════════════════"
