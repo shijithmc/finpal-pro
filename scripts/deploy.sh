@@ -159,11 +159,11 @@ command -v python3 &>/dev/null && PYTHON_CMD="python3"
 
 if [[ -n "$PYTHON_CMD" && -f "$OUTPUTS_FILE" ]]; then
   _get() { $PYTHON_CMD -c "import json,sys; d=json.load(open('$OUTPUTS_FILE')); print(d.get('$1',{}).get('$2',''))" 2>/dev/null; }
-  APP_URL=$(_get "FinpalDistributionStack" "DistributionDomainOutput")
-  API_URL=$(_get "FinpalFoundationStack"   "ApiEndpointOutput")
-  POOL_ID=$(_get "FinpalFoundationStack"   "UserPoolIdOutput")
-  CLIENT_ID=$(_get "FinpalFoundationStack" "UserPoolClientIdOutput")
-  TABLE=$(_get "FinpalFoundationStack"     "TableNameOutput")
+  APP_URL=$(_get "FinpalDistribution" "DistributionDomainOutput")
+  API_URL=$(_get "FinpalFoundation"   "ApiEndpointOutput")
+  POOL_ID=$(_get "FinpalFoundation"   "UserPoolIdOutput")
+  CLIENT_ID=$(_get "FinpalFoundation" "UserPoolClientIdOutput")
+  TABLE=$(_get "FinpalFoundation"     "TableNameOutput")
   echo ""
   [[ -n "$APP_URL"   ]] && info "  App URL         : $APP_URL"
   [[ -n "$API_URL"   ]] && info "  API Endpoint    : $API_URL"
