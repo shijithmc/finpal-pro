@@ -35,54 +35,61 @@ function Invoke-Step {
 
 Set-Location $RepoRoot
 
-# ── Step 1: Validate ─────────────────────────────────────────
-Write-Step "1 — Validate"
+# -- Step 1: Validate ------------------------------------------
+Write-Step "1 - Validate"
 if (-not (Get-Command flutter -ErrorAction SilentlyContinue)) { throw "flutter not found in PATH" }
 $flutterVer = (flutter --version 2>&1 | Select-Object -First 1)
 Write-Info "Flutter: $flutterVer"
 
-# ── Step 2: Clean ────────────────────────────────────────────
+# -- Step 2: Clean ---------------------------------------------
 if ($Clean) {
-    Write-Step "2 — flutter clean"
+    Write-Step "2 - flutter clean"
     Invoke-Step @("flutter","clean")
 }
 
-# ── Step 3: Dependencies ─────────────────────────────────────
-Write-Step "3 — flutter pub get"
+# -- Step 3: Dependencies --------------------------------------
+Write-Step "3 - flutter pub get"
 Invoke-Step @("flutter","pub","get")
 
-# ── Step 4: Code generation ───────────────────────────────────
-Write-Step "4 — build_runner"
+# -- Step 4: Code generation -----------------------------------
+Write-Step "4 - build_runner"
 Invoke-Step @("dart","run","build_runner","build","--delete-conflicting-outputs")
 
-# ── Step 5: Format check ─────────────────────────────────────
-Write-Step "5 — dart format check"
+# -- Step 5: Format check --------------------------------------
+Write-Step "5 - dart format check"
 dart format --set-exit-if-changed lib/ test/
-if ($LASTEXITCODE -ne 0) { throw "Format check failed — run: dart format lib/ test/" }
+if ($LASTEXITCODE -ne 0) { throw "Format check failed - run: dart format lib/ test/" }
 
-# ── Step 6: Analyze ──────────────────────────────────────────
-Write-Step "6 — dart analyze"
+# -- Step 6: Analyze -------------------------------------------
+Write-Step "6 - dart analyze"
 Invoke-Step @("flutter","analyze","--fatal-infos")
 
-# ── Step 7: Tests ────────────────────────────────────────────
+# -- Step 7: Tests ---------------------------------------------
 if (-not $SkipTests) {
-    Write-Step "7 — flutter test"
+    Write-Step "7 - flutter test"
     Invoke-Step @("flutter","test","test/","--reporter=compact")
 } else {
-    Write-Info "Step 7 — tests skipped (-SkipTests)"
+    Write-Info "Step 7 - tests skipped (-SkipTests)"
 }
 
-# ── Step 8: Flutter Web build ─────────────────────────────────
-Write-Step "8 — flutter build web"
-Invoke-Step @("flutter","build","web","--release","--dart-define=APP_ENV=production","--web-renderer","canvaskit")
+# -- Step 8: Flutter Web build ---------------------------------
+Write-Step "8 - flutter build web"
+$CognitoPoolId  = if ($env:COGNITO_POOL_ID)   { $env:COGNITO_POOL_ID }   else { "" }
+$CognitoClientId = if ($env:COGNITO_CLIENT_ID) { $env:COGNITO_CLIENT_ID } else { "" }
+Invoke-Step @(
+    "flutter","build","web","--release",
+    "--dart-define=APP_ENV=production",
+    "--dart-define=COGNITO_POOL_ID=$CognitoPoolId",
+    "--dart-define=COGNITO_CLIENT_ID=$CognitoClientId"
+)
 
 $WebOut = Join-Path $RepoRoot "build\web"
 Write-Info "Web output: $WebOut"
 
-# ── Step 9: Deploy to S3 (optional) ──────────────────────────
+# -- Step 9: Deploy to S3 (optional) ---------------------------
 if ($Deploy) {
-    Write-Step "9 — Deploy to S3 + CloudFront"
-    if (-not (Get-Command aws -ErrorAction SilentlyContinue)) { throw "aws CLI not found — required for -Deploy" }
+    Write-Step "9 - Deploy to S3 + CloudFront"
+    if (-not (Get-Command aws -ErrorAction SilentlyContinue)) { throw "aws CLI not found - required for -Deploy" }
 
     if (-not $Bucket) {
         $Bucket = aws ssm get-parameter --name "/finpal-pro/distribution/bucket-name" --query "Parameter.Value" --output text
@@ -96,13 +103,13 @@ if ($Deploy) {
     Write-Info "Bucket    : s3://$Bucket"
     Write-Info "CloudFront: $DistId"
 
-    # Content-hashed assets — immutable 1 year
+    # Content-hashed assets -- immutable 1 year
     aws s3 sync $WebOut "s3://$Bucket" --delete `
         --exclude "*.html" --exclude "flutter_service_worker.js" `
         --cache-control "public, max-age=31536000, immutable"
     if ($LASTEXITCODE -ne 0) { throw "s3 sync (assets) failed" }
 
-    # HTML + service worker — no-cache
+    # HTML + service worker -- no-cache
     aws s3 sync $WebOut "s3://$Bucket" `
         --exclude "*" --include "*.html" --include "flutter_service_worker.js" `
         --cache-control "no-cache, no-store, must-revalidate"
@@ -115,7 +122,20 @@ if ($Deploy) {
 }
 
 Write-Host ""
-Write-Info "════════════════════════════════════════════════════════"
-Write-Info "  Flutter Web build complete — output: build\web\"
-if ($Deploy) { Write-Info "  Deployed → s3://$Bucket" } else { Write-Info "  Run with -Deploy to push to S3" }
-Write-Info "════════════════════════════════════════════════════════"
+Write-Info "========================================================"
+Write-Info "  Flutter Web build complete - output: build\web\"
+if ($Deploy) {
+    Write-Info "  Deployed -> s3://$Bucket"
+    $CfDomain = aws cloudfront get-distribution `
+        --id $DistId `
+        --query "Distribution.DomainName" `
+        --output text 2>$null
+    if ($CfDomain -and $LASTEXITCODE -eq 0) {
+        Write-Info "  App URL  : https://$CfDomain"
+    } else {
+        Write-Warn "  Could not resolve CloudFront domain - check distribution $DistId"
+    }
+} else {
+    Write-Info "  Run with -Deploy to push to S3"
+}
+Write-Info "========================================================"

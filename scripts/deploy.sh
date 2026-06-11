@@ -92,7 +92,8 @@ step "8 — flutter build web"
 flutter build web \
   --release \
   --dart-define=APP_ENV=production \
-  --web-renderer canvaskit
+  --dart-define=COGNITO_POOL_ID="${COGNITO_POOL_ID:-}" \
+  --dart-define=COGNITO_CLIENT_ID="${COGNITO_CLIENT_ID:-}"
 
 WEB_OUT="$REPO_ROOT/build/web"
 info "Web output: $WEB_OUT"
