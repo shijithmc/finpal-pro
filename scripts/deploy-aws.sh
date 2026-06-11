@@ -169,6 +169,25 @@ fi
 echo ""
 info "════════════════════════════════════════════════════════"
 info "  CDK deployment complete"
-info "  Outputs written to: $REPO_ROOT/cdk-outputs.json"
 info "  Environment: $APP_ENV | Region: $REGION | Account: $ACCOUNT"
+info "  Outputs: $REPO_ROOT/cdk-outputs.json"
+
+OUTPUTS_FILE="$REPO_ROOT/cdk-outputs.json"
+if command -v python3 &>/dev/null && [[ -f "$OUTPUTS_FILE" ]]; then
+  _get() { python3 -c "import json,sys; d=json.load(open('$OUTPUTS_FILE')); print(d.get('$1',{}).get('$2',''))" 2>/dev/null; }
+  APP_URL=$(_get "FinpalDistributionStack" "DistributionDomainOutput")
+  API_URL=$(_get "FinpalFoundationStack"   "ApiEndpointOutput")
+  POOL_ID=$(_get "FinpalFoundationStack"   "UserPoolIdOutput")
+  CLIENT_ID=$(_get "FinpalFoundationStack" "UserPoolClientIdOutput")
+  TABLE=$(_get "FinpalFoundationStack"     "TableNameOutput")
+  echo ""
+  [[ -n "$APP_URL"   ]] && info "  App URL         : $APP_URL"
+  [[ -n "$API_URL"   ]] && info "  API Endpoint    : $API_URL"
+  [[ -n "$POOL_ID"   ]] && info "  Cognito Pool ID : $POOL_ID"
+  [[ -n "$CLIENT_ID" ]] && info "  Cognito Client  : $CLIENT_ID"
+  [[ -n "$TABLE"     ]] && info "  DynamoDB Table  : $TABLE"
+else
+  warn "  python3 not found or cdk-outputs.json missing — check file for URLs"
+fi
+
 info "════════════════════════════════════════════════════════"
