@@ -25,6 +25,9 @@ final class CognitoAuthService implements IAuthService {
   static const _phoneKey = 'finpal_phone';
   static const _userIdKey = 'finpal_user_id';
 
+  // Survives sign-out — powers the one-tap "Continue as" re-login.
+  static const _lastPhoneKey = 'finpal_last_phone';
+
   // Used for signUp only — never submitted for authentication.
   // CUSTOM_AUTH does not verify this password; only the signUp call needs it
   // to satisfy Cognito's password policy.
@@ -86,6 +89,9 @@ final class CognitoAuthService implements IAuthService {
 
   @override
   Future<String?> getCurrentPhone() => _storage.read(key: _phoneKey);
+
+  @override
+  Future<String?> getLastUsedPhone() => _storage.read(key: _lastPhoneKey);
 
   // ── Helpers ───────────────────────────────────────────────────────────────
 
@@ -189,6 +195,7 @@ final class CognitoAuthService implements IAuthService {
       await _storage.write(key: _refreshTokenKey, value: refreshToken);
     }
     await _storage.write(key: _phoneKey, value: phone);
+    await _storage.write(key: _lastPhoneKey, value: phone);
 
     final userId = _extractSub(idToken);
     if (userId != null) {

@@ -22,3 +22,9 @@ final currentUserIdProvider = FutureProvider<String?>((ref) async {
 /// Mutable state that the login page sets to true after successful sign-in,
 /// triggering a router refresh without requiring a full provider invalidation.
 final authStateChangedProvider = StateProvider<int>((ref) => 0);
+
+/// The phone number of the currently signed-in user (10 digits), or null.
+final currentPhoneProvider = FutureProvider<String?>((ref) async {
+  ref.watch(authStateChangedProvider);
+  return ref.read(authServiceProvider).getCurrentPhone();
+});

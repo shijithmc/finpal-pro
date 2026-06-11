@@ -22,6 +22,10 @@ abstract interface class IAuthService {
 
   /// Returns the stored phone number (10 digits, no country prefix), or null.
   Future<String?> getCurrentPhone();
+
+  /// Returns the last phone number used to sign in on this device, or null.
+  /// Survives sign-out — powers the one-tap "Continue as" re-login.
+  Future<String?> getLastUsedPhone();
 }
 
 /// Thrown when an authentication operation fails.
