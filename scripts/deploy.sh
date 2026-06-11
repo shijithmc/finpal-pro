@@ -145,5 +145,15 @@ fi
 echo ""
 info "════════════════════════════════════════════════════════"
 info "  Flutter Web build complete — output: build/web/"
-[[ "$DEPLOY" == "true" ]] && info "  Deployed → s3://$BUCKET" || info "  Run with --deploy to push to S3"
+if [[ "$DEPLOY" == "true" ]]; then
+  info "  Deployed → s3://$BUCKET"
+  CF_DOMAIN=$(aws cloudfront get-distribution \
+    --id "$DIST_ID" \
+    --query "Distribution.DomainName" \
+    --output text 2>/dev/null) || CF_DOMAIN=""
+  [[ -n "$CF_DOMAIN" ]] && info "  App URL   : https://$CF_DOMAIN" || \
+    warn "  Could not resolve CloudFront domain — check distribution $DIST_ID"
+else
+  info "  Run with --deploy to push to S3"
+fi
 info "════════════════════════════════════════════════════════"
