@@ -29,6 +29,17 @@ abstract final class AppTheme {
     colors: [scheme.primary, scheme.tertiary],
   );
 
+  /// Full-screen backdrop gradient for the login / welcome experience.
+  /// Fixed deep-emerald tones (not scheme-derived) so white foreground text
+  /// keeps >= 4.5:1 WCAG AA contrast in both light and dark mode.
+  static LinearGradient loginBackdrop(Brightness brightness) => LinearGradient(
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+    colors: brightness == Brightness.dark
+        ? const [Color(0xFF071F14), Color(0xFF0F3B26)]
+        : const [Color(0xFF0B3D24), Color(0xFF146C43)],
+  );
+
   // ── Typography ─────────────────────────────────────────────────────────
 
   static TextTheme _textTheme(TextTheme base) => base.copyWith(
