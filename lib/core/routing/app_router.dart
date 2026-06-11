@@ -35,7 +35,7 @@ final routerProvider = Provider<GoRouter>((ref) {
       return null;
     },
     routes: [
-      GoRoute(path: '/',      builder: (_, _) => const HomePage()),
+      GoRoute(path: '/', builder: (_, _) => const HomePage()),
       GoRoute(path: '/login', builder: (_, _) => const MobileLoginPage()),
       GoRoute(
         path: '/transactions/new',
@@ -58,7 +58,7 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: '/settings',
         builder: (_, _) => const _SettingsPage(),
         routes: [
-          GoRoute(path: 'backup',  builder: (_, _) => const BackupPage()),
+          GoRoute(path: 'backup', builder: (_, _) => const BackupPage()),
           GoRoute(path: 'budgets', builder: (_, _) => const BudgetPage()),
         ],
       ),

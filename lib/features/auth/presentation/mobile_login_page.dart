@@ -22,8 +22,8 @@ class MobileLoginPage extends ConsumerStatefulWidget {
 
 class _MobileLoginPageState extends ConsumerState<MobileLoginPage> {
   final _controller = TextEditingController();
-  final _focusNode  = FocusNode();
-  bool   _loading   = false;
+  final _focusNode = FocusNode();
+  bool _loading = false;
   String? _error;
 
   @override
@@ -49,7 +49,7 @@ class _MobileLoginPageState extends ConsumerState<MobileLoginPage> {
 
     setState(() {
       _loading = true;
-      _error   = null;
+      _error = null;
     });
 
     try {
@@ -73,8 +73,8 @@ class _MobileLoginPageState extends ConsumerState<MobileLoginPage> {
 
   @override
   Widget build(BuildContext context) {
-    final theme    = Theme.of(context);
-    final scheme   = theme.colorScheme;
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
     final hasError = _error != null;
 
     return Scaffold(
@@ -141,7 +141,7 @@ class _MobileLoginPageState extends ConsumerState<MobileLoginPage> {
                     textInputAction: TextInputAction.done,
                     onFieldSubmitted: (_) => _loading ? null : _submit(),
                     decoration: InputDecoration(
-                      counterText: '',   // Hide the default "0/10" counter
+                      counterText: '', // Hide the default "0/10" counter
                       prefixIcon: Padding(
                         padding: const EdgeInsets.symmetric(
                           horizontal: 16,
