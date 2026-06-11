@@ -2728,6 +2728,17 @@ class $SecurityConfigsTable extends SecurityConfigs
     requiredDuringInsert: false,
     defaultValue: const Constant(0),
   );
+  static const VerificationMeta _cognitoUserIdMeta = const VerificationMeta(
+    'cognitoUserId',
+  );
+  @override
+  late final GeneratedColumn<String> cognitoUserId = GeneratedColumn<String>(
+    'cognito_user_id',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -2735,6 +2746,7 @@ class $SecurityConfigsTable extends SecurityConfigs
     biometricEnabled,
     lockOnBackground,
     lockDelaySeconds,
+    cognitoUserId,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -2784,6 +2796,15 @@ class $SecurityConfigsTable extends SecurityConfigs
         ),
       );
     }
+    if (data.containsKey('cognito_user_id')) {
+      context.handle(
+        _cognitoUserIdMeta,
+        cognitoUserId.isAcceptableOrUnknown(
+          data['cognito_user_id']!,
+          _cognitoUserIdMeta,
+        ),
+      );
+    }
     return context;
   }
 
@@ -2813,6 +2834,10 @@ class $SecurityConfigsTable extends SecurityConfigs
         DriftSqlType.int,
         data['${effectivePrefix}lock_delay_seconds'],
       )!,
+      cognitoUserId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}cognito_user_id'],
+      ),
     );
   }
 
@@ -2826,16 +2851,23 @@ class SecurityConfigData extends DataClass
     implements Insertable<SecurityConfigData> {
   /// Singleton row — always id = 1.
   final int id;
+
+  /// Legacy PIN hash — cleared in schema v4 migration.
+  /// Column kept for safe forward migration; stop writing to it.
   final String? pinHash;
   final bool biometricEnabled;
   final bool lockOnBackground;
   final int lockDelaySeconds;
+
+  /// Cognito user sub (UUID). Populated on first login — added in schema v4.
+  final String? cognitoUserId;
   const SecurityConfigData({
     required this.id,
     this.pinHash,
     required this.biometricEnabled,
     required this.lockOnBackground,
     required this.lockDelaySeconds,
+    this.cognitoUserId,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -2847,6 +2879,9 @@ class SecurityConfigData extends DataClass
     map['biometric_enabled'] = Variable<bool>(biometricEnabled);
     map['lock_on_background'] = Variable<bool>(lockOnBackground);
     map['lock_delay_seconds'] = Variable<int>(lockDelaySeconds);
+    if (!nullToAbsent || cognitoUserId != null) {
+      map['cognito_user_id'] = Variable<String>(cognitoUserId);
+    }
     return map;
   }
 
@@ -2859,6 +2894,9 @@ class SecurityConfigData extends DataClass
       biometricEnabled: Value(biometricEnabled),
       lockOnBackground: Value(lockOnBackground),
       lockDelaySeconds: Value(lockDelaySeconds),
+      cognitoUserId: cognitoUserId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(cognitoUserId),
     );
   }
 
@@ -2873,6 +2911,7 @@ class SecurityConfigData extends DataClass
       biometricEnabled: serializer.fromJson<bool>(json['biometricEnabled']),
       lockOnBackground: serializer.fromJson<bool>(json['lockOnBackground']),
       lockDelaySeconds: serializer.fromJson<int>(json['lockDelaySeconds']),
+      cognitoUserId: serializer.fromJson<String?>(json['cognitoUserId']),
     );
   }
   @override
@@ -2884,6 +2923,7 @@ class SecurityConfigData extends DataClass
       'biometricEnabled': serializer.toJson<bool>(biometricEnabled),
       'lockOnBackground': serializer.toJson<bool>(lockOnBackground),
       'lockDelaySeconds': serializer.toJson<int>(lockDelaySeconds),
+      'cognitoUserId': serializer.toJson<String?>(cognitoUserId),
     };
   }
 
@@ -2893,12 +2933,16 @@ class SecurityConfigData extends DataClass
     bool? biometricEnabled,
     bool? lockOnBackground,
     int? lockDelaySeconds,
+    Value<String?> cognitoUserId = const Value.absent(),
   }) => SecurityConfigData(
     id: id ?? this.id,
     pinHash: pinHash.present ? pinHash.value : this.pinHash,
     biometricEnabled: biometricEnabled ?? this.biometricEnabled,
     lockOnBackground: lockOnBackground ?? this.lockOnBackground,
     lockDelaySeconds: lockDelaySeconds ?? this.lockDelaySeconds,
+    cognitoUserId: cognitoUserId.present
+        ? cognitoUserId.value
+        : this.cognitoUserId,
   );
   SecurityConfigData copyWithCompanion(SecurityConfigsCompanion data) {
     return SecurityConfigData(
@@ -2913,6 +2957,9 @@ class SecurityConfigData extends DataClass
       lockDelaySeconds: data.lockDelaySeconds.present
           ? data.lockDelaySeconds.value
           : this.lockDelaySeconds,
+      cognitoUserId: data.cognitoUserId.present
+          ? data.cognitoUserId.value
+          : this.cognitoUserId,
     );
   }
 
@@ -2923,7 +2970,8 @@ class SecurityConfigData extends DataClass
           ..write('pinHash: $pinHash, ')
           ..write('biometricEnabled: $biometricEnabled, ')
           ..write('lockOnBackground: $lockOnBackground, ')
-          ..write('lockDelaySeconds: $lockDelaySeconds')
+          ..write('lockDelaySeconds: $lockDelaySeconds, ')
+          ..write('cognitoUserId: $cognitoUserId')
           ..write(')'))
         .toString();
   }
@@ -2935,6 +2983,7 @@ class SecurityConfigData extends DataClass
     biometricEnabled,
     lockOnBackground,
     lockDelaySeconds,
+    cognitoUserId,
   );
   @override
   bool operator ==(Object other) =>
@@ -2944,7 +2993,8 @@ class SecurityConfigData extends DataClass
           other.pinHash == this.pinHash &&
           other.biometricEnabled == this.biometricEnabled &&
           other.lockOnBackground == this.lockOnBackground &&
-          other.lockDelaySeconds == this.lockDelaySeconds);
+          other.lockDelaySeconds == this.lockDelaySeconds &&
+          other.cognitoUserId == this.cognitoUserId);
 }
 
 class SecurityConfigsCompanion extends UpdateCompanion<SecurityConfigData> {
@@ -2953,12 +3003,14 @@ class SecurityConfigsCompanion extends UpdateCompanion<SecurityConfigData> {
   final Value<bool> biometricEnabled;
   final Value<bool> lockOnBackground;
   final Value<int> lockDelaySeconds;
+  final Value<String?> cognitoUserId;
   const SecurityConfigsCompanion({
     this.id = const Value.absent(),
     this.pinHash = const Value.absent(),
     this.biometricEnabled = const Value.absent(),
     this.lockOnBackground = const Value.absent(),
     this.lockDelaySeconds = const Value.absent(),
+    this.cognitoUserId = const Value.absent(),
   });
   SecurityConfigsCompanion.insert({
     this.id = const Value.absent(),
@@ -2966,6 +3018,7 @@ class SecurityConfigsCompanion extends UpdateCompanion<SecurityConfigData> {
     this.biometricEnabled = const Value.absent(),
     this.lockOnBackground = const Value.absent(),
     this.lockDelaySeconds = const Value.absent(),
+    this.cognitoUserId = const Value.absent(),
   });
   static Insertable<SecurityConfigData> custom({
     Expression<int>? id,
@@ -2973,6 +3026,7 @@ class SecurityConfigsCompanion extends UpdateCompanion<SecurityConfigData> {
     Expression<bool>? biometricEnabled,
     Expression<bool>? lockOnBackground,
     Expression<int>? lockDelaySeconds,
+    Expression<String>? cognitoUserId,
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
@@ -2980,6 +3034,7 @@ class SecurityConfigsCompanion extends UpdateCompanion<SecurityConfigData> {
       if (biometricEnabled != null) 'biometric_enabled': biometricEnabled,
       if (lockOnBackground != null) 'lock_on_background': lockOnBackground,
       if (lockDelaySeconds != null) 'lock_delay_seconds': lockDelaySeconds,
+      if (cognitoUserId != null) 'cognito_user_id': cognitoUserId,
     });
   }
 
@@ -2989,6 +3044,7 @@ class SecurityConfigsCompanion extends UpdateCompanion<SecurityConfigData> {
     Value<bool>? biometricEnabled,
     Value<bool>? lockOnBackground,
     Value<int>? lockDelaySeconds,
+    Value<String?>? cognitoUserId,
   }) {
     return SecurityConfigsCompanion(
       id: id ?? this.id,
@@ -2996,6 +3052,7 @@ class SecurityConfigsCompanion extends UpdateCompanion<SecurityConfigData> {
       biometricEnabled: biometricEnabled ?? this.biometricEnabled,
       lockOnBackground: lockOnBackground ?? this.lockOnBackground,
       lockDelaySeconds: lockDelaySeconds ?? this.lockDelaySeconds,
+      cognitoUserId: cognitoUserId ?? this.cognitoUserId,
     );
   }
 
@@ -3017,6 +3074,9 @@ class SecurityConfigsCompanion extends UpdateCompanion<SecurityConfigData> {
     if (lockDelaySeconds.present) {
       map['lock_delay_seconds'] = Variable<int>(lockDelaySeconds.value);
     }
+    if (cognitoUserId.present) {
+      map['cognito_user_id'] = Variable<String>(cognitoUserId.value);
+    }
     return map;
   }
 
@@ -3027,7 +3087,8 @@ class SecurityConfigsCompanion extends UpdateCompanion<SecurityConfigData> {
           ..write('pinHash: $pinHash, ')
           ..write('biometricEnabled: $biometricEnabled, ')
           ..write('lockOnBackground: $lockOnBackground, ')
-          ..write('lockDelaySeconds: $lockDelaySeconds')
+          ..write('lockDelaySeconds: $lockDelaySeconds, ')
+          ..write('cognitoUserId: $cognitoUserId')
           ..write(')'))
         .toString();
   }
@@ -5575,6 +5636,7 @@ typedef $$SecurityConfigsTableCreateCompanionBuilder =
       Value<bool> biometricEnabled,
       Value<bool> lockOnBackground,
       Value<int> lockDelaySeconds,
+      Value<String?> cognitoUserId,
     });
 typedef $$SecurityConfigsTableUpdateCompanionBuilder =
     SecurityConfigsCompanion Function({
@@ -5583,6 +5645,7 @@ typedef $$SecurityConfigsTableUpdateCompanionBuilder =
       Value<bool> biometricEnabled,
       Value<bool> lockOnBackground,
       Value<int> lockDelaySeconds,
+      Value<String?> cognitoUserId,
     });
 
 class $$SecurityConfigsTableFilterComposer
@@ -5616,6 +5679,11 @@ class $$SecurityConfigsTableFilterComposer
 
   ColumnFilters<int> get lockDelaySeconds => $composableBuilder(
     column: $table.lockDelaySeconds,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get cognitoUserId => $composableBuilder(
+    column: $table.cognitoUserId,
     builder: (column) => ColumnFilters(column),
   );
 }
@@ -5653,6 +5721,11 @@ class $$SecurityConfigsTableOrderingComposer
     column: $table.lockDelaySeconds,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<String> get cognitoUserId => $composableBuilder(
+    column: $table.cognitoUserId,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$SecurityConfigsTableAnnotationComposer
@@ -5682,6 +5755,11 @@ class $$SecurityConfigsTableAnnotationComposer
 
   GeneratedColumn<int> get lockDelaySeconds => $composableBuilder(
     column: $table.lockDelaySeconds,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get cognitoUserId => $composableBuilder(
+    column: $table.cognitoUserId,
     builder: (column) => column,
   );
 }
@@ -5728,12 +5806,14 @@ class $$SecurityConfigsTableTableManager
                 Value<bool> biometricEnabled = const Value.absent(),
                 Value<bool> lockOnBackground = const Value.absent(),
                 Value<int> lockDelaySeconds = const Value.absent(),
+                Value<String?> cognitoUserId = const Value.absent(),
               }) => SecurityConfigsCompanion(
                 id: id,
                 pinHash: pinHash,
                 biometricEnabled: biometricEnabled,
                 lockOnBackground: lockOnBackground,
                 lockDelaySeconds: lockDelaySeconds,
+                cognitoUserId: cognitoUserId,
               ),
           createCompanionCallback:
               ({
@@ -5742,12 +5822,14 @@ class $$SecurityConfigsTableTableManager
                 Value<bool> biometricEnabled = const Value.absent(),
                 Value<bool> lockOnBackground = const Value.absent(),
                 Value<int> lockDelaySeconds = const Value.absent(),
+                Value<String?> cognitoUserId = const Value.absent(),
               }) => SecurityConfigsCompanion.insert(
                 id: id,
                 pinHash: pinHash,
                 biometricEnabled: biometricEnabled,
                 lockOnBackground: lockOnBackground,
                 lockDelaySeconds: lockDelaySeconds,
+                cognitoUserId: cognitoUserId,
               ),
           withReferenceMapper: (p0) => p0
               .map((e) => (e.readTable(table), BaseReferences(db, table, e)))

@@ -19,11 +19,11 @@ import '../domain/i_auth_service.dart';
 /// Token storage: flutter_secure_storage (encrypted on-device).
 final class CognitoAuthService implements IAuthService {
   // ── Storage keys ──────────────────────────────────────────────────────────
-  static const _accessTokenKey  = 'finpal_cognito_access';
-  static const _idTokenKey      = 'finpal_cognito_id';
+  static const _accessTokenKey = 'finpal_cognito_access';
+  static const _idTokenKey = 'finpal_cognito_id';
   static const _refreshTokenKey = 'finpal_cognito_refresh';
-  static const _phoneKey        = 'finpal_phone';
-  static const _userIdKey       = 'finpal_user_id';
+  static const _phoneKey = 'finpal_phone';
+  static const _userIdKey = 'finpal_user_id';
 
   // Used for signUp only — never submitted for authentication.
   // CUSTOM_AUTH does not verify this password; only the signUp call needs it
@@ -33,14 +33,13 @@ final class CognitoAuthService implements IAuthService {
   final FlutterSecureStorage _storage;
   final http.Client _httpClient;
 
-  CognitoAuthService({
-    FlutterSecureStorage? storage,
-    http.Client? httpClient,
-  }) : _storage = storage ??
-            const FlutterSecureStorage(
-              aOptions: AndroidOptions(encryptedSharedPreferences: true),
-            ),
-       _httpClient = httpClient ?? http.Client();
+  CognitoAuthService({FlutterSecureStorage? storage, http.Client? httpClient})
+    : _storage =
+          storage ??
+          const FlutterSecureStorage(
+            aOptions: AndroidOptions(encryptedSharedPreferences: true),
+          ),
+      _httpClient = httpClient ?? http.Client();
 
   // ── IAuthService ──────────────────────────────────────────────────────────
 
@@ -173,8 +172,8 @@ final class CognitoAuthService implements IAuthService {
     Map<String, dynamic> authResult,
     String phone,
   ) async {
-    final accessToken  = authResult['AccessToken']  as String?;
-    final idToken      = authResult['IdToken']      as String?;
+    final accessToken = authResult['AccessToken'] as String?;
+    final idToken = authResult['IdToken'] as String?;
     final refreshToken = authResult['RefreshToken'] as String?;
 
     if (accessToken == null || idToken == null) {
@@ -184,8 +183,8 @@ final class CognitoAuthService implements IAuthService {
       );
     }
 
-    await _storage.write(key: _accessTokenKey,  value: accessToken);
-    await _storage.write(key: _idTokenKey,       value: idToken);
+    await _storage.write(key: _accessTokenKey, value: accessToken);
+    await _storage.write(key: _idTokenKey, value: idToken);
     if (refreshToken != null) {
       await _storage.write(key: _refreshTokenKey, value: refreshToken);
     }
@@ -204,12 +203,12 @@ final class CognitoAuthService implements IAuthService {
       final parts = jwtToken.split('.');
       if (parts.length != 3) return null;
       final payload = parts[1];
-      final padded  = payload.padRight(
+      final padded = payload.padRight(
         payload.length + (4 - payload.length % 4) % 4,
         '=',
       );
       final decoded = utf8.decode(base64Url.decode(padded));
-      final claims  = jsonDecode(decoded) as Map<String, dynamic>;
+      final claims = jsonDecode(decoded) as Map<String, dynamic>;
       return claims['sub'] as String?;
     } catch (_) {
       return null;

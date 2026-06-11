@@ -22,7 +22,7 @@ final class BiometricSecurityService implements ISecurityService {
 
   @override
   Future<bool> isBiometricAvailable() async {
-    final canCheck    = await _localAuth.canCheckBiometrics;
+    final canCheck = await _localAuth.canCheckBiometrics;
     final isSupported = await _localAuth.isDeviceSupported();
     return canCheck && isSupported;
   }
@@ -44,9 +44,10 @@ final class BiometricSecurityService implements ISecurityService {
 
   @override
   Future<SecurityConfigSnapshot> readConfig() async {
-    final row = await (_db.select(_db.securityConfigs)
-          ..where((s) => s.id.equals(AppConstants.securityConfigRowId)))
-        .getSingleOrNull();
+    final row =
+        await (_db.select(_db.securityConfigs)
+              ..where((s) => s.id.equals(AppConstants.securityConfigRowId)))
+            .getSingleOrNull();
     return SecurityConfigSnapshot(
       biometricEnabled: row?.biometricEnabled ?? false,
       lockOnBackground: row?.lockOnBackground ?? true,

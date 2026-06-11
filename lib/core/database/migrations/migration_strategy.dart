@@ -30,9 +30,7 @@ MigrationStrategy buildMigrationStrategy(AppDatabase db) {
           'ALTER TABLE security_configs ADD COLUMN cognito_user_id TEXT',
         );
         // Clear PIN hashes — PIN auth replaced by Cognito mobile-number login.
-        await db.customStatement(
-          'UPDATE security_configs SET pin_hash = NULL',
-        );
+        await db.customStatement('UPDATE security_configs SET pin_hash = NULL');
       }
     },
     beforeOpen: (details) async {

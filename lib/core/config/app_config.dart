@@ -18,7 +18,7 @@ abstract final class AppConfig {
   /// Passed as --dart-define=COGNITO_POOL_ID=...
   static const cognitoUserPoolId = String.fromEnvironment(
     'COGNITO_POOL_ID',
-    defaultValue: '',   // Empty → auth will fail with a clear Cognito error
+    defaultValue: '', // Empty → auth will fail with a clear Cognito error
   );
 
   /// Cognito App Client ID (no secret — public client).
