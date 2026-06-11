@@ -12,7 +12,7 @@
 ///     --dart-define=COGNITO_CLIENT_ID=xxx
 ///
 /// After CDK deploy, read the values from CDK outputs:
-///   cat cdk-outputs.json | jq '.FinpalFoundationStack'
+///   cat cdk-outputs.json | jq '.FinpalFoundation'
 abstract final class AppConfig {
   /// Cognito User Pool ID (e.g. "ap-south-1_KeUl8KcN1").
   /// Passed as --dart-define=COGNITO_POOL_ID=...
