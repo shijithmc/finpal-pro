@@ -172,11 +172,11 @@ if (-not $DryRun) {
     if (Test-Path $OutputsFile) {
         try {
             $outputs  = Get-Content $OutputsFile -Raw | ConvertFrom-Json
-            $AppUrl   = $outputs.'FinpalDistributionStack'.'DistributionDomainOutput'
-            $ApiUrl   = $outputs.'FinpalFoundationStack'.'ApiEndpointOutput'
-            $PoolId   = $outputs.'FinpalFoundationStack'.'UserPoolIdOutput'
-            $ClientId = $outputs.'FinpalFoundationStack'.'UserPoolClientIdOutput'
-            $Table    = $outputs.'FinpalFoundationStack'.'TableNameOutput'
+            $AppUrl   = $outputs.'FinpalDistribution'.'DistributionDomainOutput'
+            $ApiUrl   = $outputs.'FinpalFoundation'.'ApiEndpointOutput'
+            $PoolId   = $outputs.'FinpalFoundation'.'UserPoolIdOutput'
+            $ClientId = $outputs.'FinpalFoundation'.'UserPoolClientIdOutput'
+            $Table    = $outputs.'FinpalFoundation'.'TableNameOutput'
             Write-Host ""
             if ($AppUrl)   { Write-Info "  App URL         : $AppUrl" }
             if ($ApiUrl)   { Write-Info "  API Endpoint    : $ApiUrl" }
