@@ -162,5 +162,46 @@ void main() {
       expect(rows.length, 1);
       expect(rows.first.limitPaise, 500000);
     });
+
+    // ── Schema v5: UserProfiles table ────────────────────────────────────────
+
+    test('userProfilesTable_canInsertAndQuery', () async {
+      await db
+          .into(db.userProfiles)
+          .insert(
+            UserProfilesCompanion.insert(
+              cognitoUserId: 'sub-test-uuid',
+              displayName: const Value('Shijith'),
+              createdAt: '2026-06-11T12:00:00.000',
+            ),
+          );
+      final row = await (db.select(
+        db.userProfiles,
+      )..where((p) => p.cognitoUserId.equals('sub-test-uuid'))).getSingle();
+      expect(row.displayName, 'Shijith');
+      expect(row.onboardingStep, 0); // default: not started
+    });
+
+    test(
+      'userProfilesTable_displayNameNullable_onboardingStepUpdates',
+      () async {
+        await db
+            .into(db.userProfiles)
+            .insert(
+              UserProfilesCompanion.insert(
+                cognitoUserId: 'sub-anon',
+                createdAt: '2026-06-11T12:00:00.000',
+              ),
+            );
+        await (db.update(db.userProfiles)
+              ..where((p) => p.cognitoUserId.equals('sub-anon')))
+            .write(const UserProfilesCompanion(onboardingStep: Value(3)));
+        final row = await (db.select(
+          db.userProfiles,
+        )..where((p) => p.cognitoUserId.equals('sub-anon'))).getSingle();
+        expect(row.displayName, null);
+        expect(row.onboardingStep, 3); // complete
+      },
+    );
   });
 }

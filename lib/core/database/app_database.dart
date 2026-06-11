@@ -116,6 +116,25 @@ class Budgets extends Table {
   Set<Column> get primaryKey => {id};
 }
 
+/// Per-user profile: display name + onboarding progress. Added in schema v5.
+/// Keyed on Cognito user sub so a number-switch on a shared device gets a
+/// fresh profile and onboarding run.
+@DataClassName('UserProfileData')
+class UserProfiles extends Table {
+  TextColumn get cognitoUserId => text()();
+
+  /// Null until the user sets a name (or skips the name step).
+  TextColumn get displayName => text().withLength(min: 0, max: 50).nullable()();
+
+  /// 0 = not started, 1 = name done, 2 = account done, 3 = complete.
+  IntColumn get onboardingStep => integer().withDefault(const Constant(0))();
+
+  TextColumn get createdAt => text()();
+
+  @override
+  Set<Column> get primaryKey => {cognitoUserId};
+}
+
 @DataClassName('SecurityConfigData')
 class SecurityConfigs extends Table {
   /// Singleton row — always id = 1.
@@ -175,6 +194,7 @@ final class MonthlyTotals {
     MonthlyAggregates,
     Budgets,
     SecurityConfigs,
+    UserProfiles,
   ],
 )
 class AppDatabase extends _$AppDatabase {
@@ -187,7 +207,7 @@ class AppDatabase extends _$AppDatabase {
   }
 
   @override
-  int get schemaVersion => 4;
+  int get schemaVersion => 5;
 
   @override
   MigrationStrategy get migration => buildMigrationStrategy(this);

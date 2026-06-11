@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 
 import '../../../core/database/app_database.dart';
 import '../../accounts/application/providers.dart';
+import '../../profile/application/providers.dart';
 import '../../transactions/application/providers.dart';
 import '../../transactions/presentation/transaction_list_page.dart';
 import '../../transactions/presentation/templates_page.dart';
@@ -94,6 +95,9 @@ class _DashboardTab extends ConsumerWidget {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
+          // Time-of-day greeting with display name (Welcome Experience)
+          const _GreetingHeader(),
+          const SizedBox(height: 12),
           // Net worth card
           accountsAsync.when(
             loading: () => const Card(
@@ -231,6 +235,38 @@ class _SummaryCard extends StatelessWidget {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Time-of-day-aware greeting with the user's display name.
+/// "Good morning, Shijith" — falls back to a nameless greeting if the
+/// name was skipped during onboarding.
+class _GreetingHeader extends ConsumerWidget {
+  const _GreetingHeader();
+
+  static String _greetingFor(DateTime now) {
+    final hour = now.hour;
+    if (hour < 12) return 'Good morning';
+    if (hour < 17) return 'Good afternoon';
+    return 'Good evening';
+  }
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    final nameAsync = ref.watch(displayNameProvider);
+    final greeting = _greetingFor(DateTime.now());
+    final name = nameAsync.valueOrNull;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 4),
+      child: Text(
+        name == null || name.isEmpty ? '$greeting!' : '$greeting, $name',
+        style: theme.textTheme.headlineSmall?.copyWith(
+          fontWeight: FontWeight.bold,
         ),
       ),
     );

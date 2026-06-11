@@ -3094,6 +3094,349 @@ class SecurityConfigsCompanion extends UpdateCompanion<SecurityConfigData> {
   }
 }
 
+class $UserProfilesTable extends UserProfiles
+    with TableInfo<$UserProfilesTable, UserProfileData> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $UserProfilesTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _cognitoUserIdMeta = const VerificationMeta(
+    'cognitoUserId',
+  );
+  @override
+  late final GeneratedColumn<String> cognitoUserId = GeneratedColumn<String>(
+    'cognito_user_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _displayNameMeta = const VerificationMeta(
+    'displayName',
+  );
+  @override
+  late final GeneratedColumn<String> displayName = GeneratedColumn<String>(
+    'display_name',
+    aliasedName,
+    true,
+    additionalChecks: GeneratedColumn.checkTextLength(
+      minTextLength: 0,
+      maxTextLength: 50,
+    ),
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _onboardingStepMeta = const VerificationMeta(
+    'onboardingStep',
+  );
+  @override
+  late final GeneratedColumn<int> onboardingStep = GeneratedColumn<int>(
+    'onboarding_step',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _createdAtMeta = const VerificationMeta(
+    'createdAt',
+  );
+  @override
+  late final GeneratedColumn<String> createdAt = GeneratedColumn<String>(
+    'created_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    cognitoUserId,
+    displayName,
+    onboardingStep,
+    createdAt,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'user_profiles';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<UserProfileData> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('cognito_user_id')) {
+      context.handle(
+        _cognitoUserIdMeta,
+        cognitoUserId.isAcceptableOrUnknown(
+          data['cognito_user_id']!,
+          _cognitoUserIdMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_cognitoUserIdMeta);
+    }
+    if (data.containsKey('display_name')) {
+      context.handle(
+        _displayNameMeta,
+        displayName.isAcceptableOrUnknown(
+          data['display_name']!,
+          _displayNameMeta,
+        ),
+      );
+    }
+    if (data.containsKey('onboarding_step')) {
+      context.handle(
+        _onboardingStepMeta,
+        onboardingStep.isAcceptableOrUnknown(
+          data['onboarding_step']!,
+          _onboardingStepMeta,
+        ),
+      );
+    }
+    if (data.containsKey('created_at')) {
+      context.handle(
+        _createdAtMeta,
+        createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_createdAtMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {cognitoUserId};
+  @override
+  UserProfileData map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return UserProfileData(
+      cognitoUserId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}cognito_user_id'],
+      )!,
+      displayName: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}display_name'],
+      ),
+      onboardingStep: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}onboarding_step'],
+      )!,
+      createdAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}created_at'],
+      )!,
+    );
+  }
+
+  @override
+  $UserProfilesTable createAlias(String alias) {
+    return $UserProfilesTable(attachedDatabase, alias);
+  }
+}
+
+class UserProfileData extends DataClass implements Insertable<UserProfileData> {
+  final String cognitoUserId;
+
+  /// Null until the user sets a name (or skips the name step).
+  final String? displayName;
+
+  /// 0 = not started, 1 = name done, 2 = account done, 3 = complete.
+  final int onboardingStep;
+  final String createdAt;
+  const UserProfileData({
+    required this.cognitoUserId,
+    this.displayName,
+    required this.onboardingStep,
+    required this.createdAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['cognito_user_id'] = Variable<String>(cognitoUserId);
+    if (!nullToAbsent || displayName != null) {
+      map['display_name'] = Variable<String>(displayName);
+    }
+    map['onboarding_step'] = Variable<int>(onboardingStep);
+    map['created_at'] = Variable<String>(createdAt);
+    return map;
+  }
+
+  UserProfilesCompanion toCompanion(bool nullToAbsent) {
+    return UserProfilesCompanion(
+      cognitoUserId: Value(cognitoUserId),
+      displayName: displayName == null && nullToAbsent
+          ? const Value.absent()
+          : Value(displayName),
+      onboardingStep: Value(onboardingStep),
+      createdAt: Value(createdAt),
+    );
+  }
+
+  factory UserProfileData.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return UserProfileData(
+      cognitoUserId: serializer.fromJson<String>(json['cognitoUserId']),
+      displayName: serializer.fromJson<String?>(json['displayName']),
+      onboardingStep: serializer.fromJson<int>(json['onboardingStep']),
+      createdAt: serializer.fromJson<String>(json['createdAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'cognitoUserId': serializer.toJson<String>(cognitoUserId),
+      'displayName': serializer.toJson<String?>(displayName),
+      'onboardingStep': serializer.toJson<int>(onboardingStep),
+      'createdAt': serializer.toJson<String>(createdAt),
+    };
+  }
+
+  UserProfileData copyWith({
+    String? cognitoUserId,
+    Value<String?> displayName = const Value.absent(),
+    int? onboardingStep,
+    String? createdAt,
+  }) => UserProfileData(
+    cognitoUserId: cognitoUserId ?? this.cognitoUserId,
+    displayName: displayName.present ? displayName.value : this.displayName,
+    onboardingStep: onboardingStep ?? this.onboardingStep,
+    createdAt: createdAt ?? this.createdAt,
+  );
+  UserProfileData copyWithCompanion(UserProfilesCompanion data) {
+    return UserProfileData(
+      cognitoUserId: data.cognitoUserId.present
+          ? data.cognitoUserId.value
+          : this.cognitoUserId,
+      displayName: data.displayName.present
+          ? data.displayName.value
+          : this.displayName,
+      onboardingStep: data.onboardingStep.present
+          ? data.onboardingStep.value
+          : this.onboardingStep,
+      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('UserProfileData(')
+          ..write('cognitoUserId: $cognitoUserId, ')
+          ..write('displayName: $displayName, ')
+          ..write('onboardingStep: $onboardingStep, ')
+          ..write('createdAt: $createdAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode =>
+      Object.hash(cognitoUserId, displayName, onboardingStep, createdAt);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is UserProfileData &&
+          other.cognitoUserId == this.cognitoUserId &&
+          other.displayName == this.displayName &&
+          other.onboardingStep == this.onboardingStep &&
+          other.createdAt == this.createdAt);
+}
+
+class UserProfilesCompanion extends UpdateCompanion<UserProfileData> {
+  final Value<String> cognitoUserId;
+  final Value<String?> displayName;
+  final Value<int> onboardingStep;
+  final Value<String> createdAt;
+  final Value<int> rowid;
+  const UserProfilesCompanion({
+    this.cognitoUserId = const Value.absent(),
+    this.displayName = const Value.absent(),
+    this.onboardingStep = const Value.absent(),
+    this.createdAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  UserProfilesCompanion.insert({
+    required String cognitoUserId,
+    this.displayName = const Value.absent(),
+    this.onboardingStep = const Value.absent(),
+    required String createdAt,
+    this.rowid = const Value.absent(),
+  }) : cognitoUserId = Value(cognitoUserId),
+       createdAt = Value(createdAt);
+  static Insertable<UserProfileData> custom({
+    Expression<String>? cognitoUserId,
+    Expression<String>? displayName,
+    Expression<int>? onboardingStep,
+    Expression<String>? createdAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (cognitoUserId != null) 'cognito_user_id': cognitoUserId,
+      if (displayName != null) 'display_name': displayName,
+      if (onboardingStep != null) 'onboarding_step': onboardingStep,
+      if (createdAt != null) 'created_at': createdAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  UserProfilesCompanion copyWith({
+    Value<String>? cognitoUserId,
+    Value<String?>? displayName,
+    Value<int>? onboardingStep,
+    Value<String>? createdAt,
+    Value<int>? rowid,
+  }) {
+    return UserProfilesCompanion(
+      cognitoUserId: cognitoUserId ?? this.cognitoUserId,
+      displayName: displayName ?? this.displayName,
+      onboardingStep: onboardingStep ?? this.onboardingStep,
+      createdAt: createdAt ?? this.createdAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (cognitoUserId.present) {
+      map['cognito_user_id'] = Variable<String>(cognitoUserId.value);
+    }
+    if (displayName.present) {
+      map['display_name'] = Variable<String>(displayName.value);
+    }
+    if (onboardingStep.present) {
+      map['onboarding_step'] = Variable<int>(onboardingStep.value);
+    }
+    if (createdAt.present) {
+      map['created_at'] = Variable<String>(createdAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('UserProfilesCompanion(')
+          ..write('cognitoUserId: $cognitoUserId, ')
+          ..write('displayName: $displayName, ')
+          ..write('onboardingStep: $onboardingStep, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$AppDatabase extends GeneratedDatabase {
   _$AppDatabase(QueryExecutor e) : super(e);
   $AppDatabaseManager get managers => $AppDatabaseManager(this);
@@ -3106,6 +3449,7 @@ abstract class _$AppDatabase extends GeneratedDatabase {
   late final $SecurityConfigsTable securityConfigs = $SecurityConfigsTable(
     this,
   );
+  late final $UserProfilesTable userProfiles = $UserProfilesTable(this);
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -3117,6 +3461,7 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     monthlyAggregates,
     budgets,
     securityConfigs,
+    userProfiles,
   ];
 }
 
@@ -5860,6 +6205,193 @@ typedef $$SecurityConfigsTableProcessedTableManager =
       SecurityConfigData,
       PrefetchHooks Function()
     >;
+typedef $$UserProfilesTableCreateCompanionBuilder =
+    UserProfilesCompanion Function({
+      required String cognitoUserId,
+      Value<String?> displayName,
+      Value<int> onboardingStep,
+      required String createdAt,
+      Value<int> rowid,
+    });
+typedef $$UserProfilesTableUpdateCompanionBuilder =
+    UserProfilesCompanion Function({
+      Value<String> cognitoUserId,
+      Value<String?> displayName,
+      Value<int> onboardingStep,
+      Value<String> createdAt,
+      Value<int> rowid,
+    });
+
+class $$UserProfilesTableFilterComposer
+    extends Composer<_$AppDatabase, $UserProfilesTable> {
+  $$UserProfilesTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get cognitoUserId => $composableBuilder(
+    column: $table.cognitoUserId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get displayName => $composableBuilder(
+    column: $table.displayName,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get onboardingStep => $composableBuilder(
+    column: $table.onboardingStep,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$UserProfilesTableOrderingComposer
+    extends Composer<_$AppDatabase, $UserProfilesTable> {
+  $$UserProfilesTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get cognitoUserId => $composableBuilder(
+    column: $table.cognitoUserId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get displayName => $composableBuilder(
+    column: $table.displayName,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get onboardingStep => $composableBuilder(
+    column: $table.onboardingStep,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$UserProfilesTableAnnotationComposer
+    extends Composer<_$AppDatabase, $UserProfilesTable> {
+  $$UserProfilesTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get cognitoUserId => $composableBuilder(
+    column: $table.cognitoUserId,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get displayName => $composableBuilder(
+    column: $table.displayName,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get onboardingStep => $composableBuilder(
+    column: $table.onboardingStep,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get createdAt =>
+      $composableBuilder(column: $table.createdAt, builder: (column) => column);
+}
+
+class $$UserProfilesTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $UserProfilesTable,
+          UserProfileData,
+          $$UserProfilesTableFilterComposer,
+          $$UserProfilesTableOrderingComposer,
+          $$UserProfilesTableAnnotationComposer,
+          $$UserProfilesTableCreateCompanionBuilder,
+          $$UserProfilesTableUpdateCompanionBuilder,
+          (
+            UserProfileData,
+            BaseReferences<_$AppDatabase, $UserProfilesTable, UserProfileData>,
+          ),
+          UserProfileData,
+          PrefetchHooks Function()
+        > {
+  $$UserProfilesTableTableManager(_$AppDatabase db, $UserProfilesTable table)
+    : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$UserProfilesTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$UserProfilesTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$UserProfilesTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> cognitoUserId = const Value.absent(),
+                Value<String?> displayName = const Value.absent(),
+                Value<int> onboardingStep = const Value.absent(),
+                Value<String> createdAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => UserProfilesCompanion(
+                cognitoUserId: cognitoUserId,
+                displayName: displayName,
+                onboardingStep: onboardingStep,
+                createdAt: createdAt,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String cognitoUserId,
+                Value<String?> displayName = const Value.absent(),
+                Value<int> onboardingStep = const Value.absent(),
+                required String createdAt,
+                Value<int> rowid = const Value.absent(),
+              }) => UserProfilesCompanion.insert(
+                cognitoUserId: cognitoUserId,
+                displayName: displayName,
+                onboardingStep: onboardingStep,
+                createdAt: createdAt,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$UserProfilesTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $UserProfilesTable,
+      UserProfileData,
+      $$UserProfilesTableFilterComposer,
+      $$UserProfilesTableOrderingComposer,
+      $$UserProfilesTableAnnotationComposer,
+      $$UserProfilesTableCreateCompanionBuilder,
+      $$UserProfilesTableUpdateCompanionBuilder,
+      (
+        UserProfileData,
+        BaseReferences<_$AppDatabase, $UserProfilesTable, UserProfileData>,
+      ),
+      UserProfileData,
+      PrefetchHooks Function()
+    >;
 
 class $AppDatabaseManager {
   final _$AppDatabase _db;
@@ -5876,4 +6408,6 @@ class $AppDatabaseManager {
       $$BudgetsTableTableManager(_db, _db.budgets);
   $$SecurityConfigsTableTableManager get securityConfigs =>
       $$SecurityConfigsTableTableManager(_db, _db.securityConfigs);
+  $$UserProfilesTableTableManager get userProfiles =>
+      $$UserProfilesTableTableManager(_db, _db.userProfiles);
 }

@@ -32,6 +32,10 @@ MigrationStrategy buildMigrationStrategy(AppDatabase db) {
         // Clear PIN hashes — PIN auth replaced by Cognito mobile-number login.
         await db.customStatement('UPDATE security_configs SET pin_hash = NULL');
       }
+      // v4 → v5: add user_profiles table (Welcome Experience).
+      if (from < 5) {
+        await m.createTable(db.userProfiles);
+      }
     },
     beforeOpen: (details) async {
       await db.customStatement('PRAGMA foreign_keys = ON');
