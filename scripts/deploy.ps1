@@ -124,18 +124,27 @@ if ($Deploy) {
 Write-Host ""
 Write-Info "========================================================"
 Write-Info "  Flutter Web build complete - output: build\web\"
-if ($Deploy) {
-    Write-Info "  Deployed -> s3://$Bucket"
-    $CfDomain = aws cloudfront get-distribution `
-        --id $DistId `
-        --query "Distribution.DomainName" `
-        --output text 2>$null
-    if ($CfDomain -and $LASTEXITCODE -eq 0) {
-        Write-Info "  App URL  : https://$CfDomain"
-    } else {
-        Write-Warn "  Could not resolve CloudFront domain - check distribution $DistId"
+if ($Deploy) { Write-Info "  Deployed -> s3://$Bucket" } else { Write-Info "  Run with -Deploy to push to S3" }
+
+$OutputsFile = Join-Path $RepoRoot "cdk-outputs.json"
+if (Test-Path $OutputsFile) {
+    try {
+        $outputs   = Get-Content $OutputsFile -Raw | ConvertFrom-Json
+        $AppUrl    = $outputs.'FinpalDistributionStack'.'DistributionDomainOutput'
+        $ApiUrl    = $outputs.'FinpalFoundationStack'.'ApiEndpointOutput'
+        $PoolId    = $outputs.'FinpalFoundationStack'.'UserPoolIdOutput'
+        $ClientId  = $outputs.'FinpalFoundationStack'.'UserPoolClientIdOutput'
+        $Table     = $outputs.'FinpalFoundationStack'.'TableNameOutput'
+        Write-Host ""
+        if ($AppUrl)   { Write-Info "  App URL         : $AppUrl" }
+        if ($ApiUrl)   { Write-Info "  API Endpoint    : $ApiUrl" }
+        if ($PoolId)   { Write-Info "  Cognito Pool ID : $PoolId" }
+        if ($ClientId) { Write-Info "  Cognito Client  : $ClientId" }
+        if ($Table)    { Write-Info "  DynamoDB Table  : $Table" }
+    } catch {
+        Write-Warn "  Could not parse cdk-outputs.json - run deploy-aws.ps1 to populate it"
     }
 } else {
-    Write-Info "  Run with -Deploy to push to S3"
+    Write-Warn "  cdk-outputs.json not found - run .\scripts\deploy-aws.sh to deploy infrastructure first"
 }
 Write-Info "========================================================"
