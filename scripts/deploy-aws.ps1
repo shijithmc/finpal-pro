@@ -52,7 +52,16 @@ function Write-Info   { param($msg) Write-Host "[INFO] $msg"  -ForegroundColor C
 function Write-Warn   { param($msg) Write-Host "[WARN] $msg"  -ForegroundColor Yellow }
 function Invoke-Step  {
     param($Cmd)
-    & $Cmd[0] $Cmd[1..($Cmd.Length-1)]
+    # cdk/dotnet log progress to stderr; under $ErrorActionPreference = "Stop"
+    # PowerShell 5.1 turns those lines into terminating NativeCommandErrors.
+    # Relax EAP for the native call and fold stderr into plain output lines.
+    $eap = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try {
+        & $Cmd[0] $Cmd[1..($Cmd.Length-1)] 2>&1 | ForEach-Object { "$_" }
+    } finally {
+        $ErrorActionPreference = $eap
+    }
     if ($LASTEXITCODE -ne 0) { throw "Command failed (exit $LASTEXITCODE): $($Cmd -join ' ')" }
 }
 
@@ -66,13 +75,13 @@ if (-not (Get-Command dotnet -ErrorAction SilentlyContinue)) {
     throw ".NET SDK not found. Install from https://dot.net"
 }
 
-# Locate CDK binary
+# Locate CDK binary - only .cmd/.exe shims are executable from PowerShell;
+# npm's extensionless shim is a bash script and runs as a no-op here
 $CdkCmd = $null
 $CdkCandidates = @(
     "cdk",
-    "$env:APPDATA\npm\cdk",
     "$env:APPDATA\npm\cdk.cmd",
-    "$($env:USERPROFILE)\.npm-global\bin\cdk"
+    "$($env:USERPROFILE)\.npm-global\cdk.cmd"
 )
 foreach ($c in $CdkCandidates) {
     if (Get-Command $c -ErrorAction SilentlyContinue) { $CdkCmd = $c; break }
@@ -80,6 +89,9 @@ foreach ($c in $CdkCandidates) {
 if (-not $CdkCmd) { throw "CDK CLI not found. Install: npm install -g aws-cdk" }
 
 $cdkVersion = (& $CdkCmd --version 2>&1) | Select-Object -First 1
+if (-not $cdkVersion) {
+    throw "CDK CLI at '$CdkCmd' produced no version output - reinstall: npm install -g aws-cdk"
+}
 Write-Info "CDK: $CdkCmd ($cdkVersion)"
 
 # -- Step 2: Resolve AWS identity -----------------------------
@@ -103,7 +115,9 @@ if ($caller.Arn -match ":root$") {
 Write-Step "3/5 - Build CDK project (dotnet build)"
 
 Push-Location (Join-Path $CdkDir "src")
-try { Invoke-Step @("dotnet","build","--configuration","Release","--nologo","-q") }
+# --verbosity quiet, NOT -q: dotnet forwards -q to MSBuild as -question,
+# which errors whenever the build is not already up to date
+try { Invoke-Step @("dotnet","build","--configuration","Release","--nologo","--verbosity","quiet") }
 finally { Pop-Location }
 Write-Info "dotnet build: SUCCESS"
 
