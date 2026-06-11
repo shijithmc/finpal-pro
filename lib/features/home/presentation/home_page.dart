@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
 import '../../../core/database/app_database.dart';
+import '../../../core/theme/app_theme.dart';
 import '../../accounts/application/providers.dart';
 import '../../profile/application/providers.dart';
 import '../../transactions/application/providers.dart';
@@ -21,17 +22,17 @@ class HomePage extends ConsumerStatefulWidget {
 class _HomePageState extends ConsumerState<HomePage> {
   int _navIndex = 0;
 
-  static const _pages = <Widget>[
-    _DashboardTab(),
-    TransactionListPage(),
-    TemplatesPage(),
-    AccountsPage(),
-  ];
-
   @override
   Widget build(BuildContext context) {
+    final pages = <Widget>[
+      _DashboardTab(onSeeAllTransactions: () => setState(() => _navIndex = 1)),
+      const TransactionListPage(),
+      const TemplatesPage(),
+      const AccountsPage(),
+    ];
+
     return Scaffold(
-      body: _pages[_navIndex],
+      body: pages[_navIndex],
       bottomNavigationBar: NavigationBar(
         selectedIndex: _navIndex,
         onDestinationSelected: (i) => setState(() => _navIndex = i),
@@ -69,13 +70,14 @@ class _HomePageState extends ConsumerState<HomePage> {
 }
 
 class _DashboardTab extends ConsumerWidget {
-  const _DashboardTab();
+  final VoidCallback onSeeAllTransactions;
+
+  const _DashboardTab({required this.onSeeAllTransactions});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final accountsAsync = ref.watch(accountsProvider);
     final txAsync = ref.watch(transactionsByMonthProvider);
-    final fmt = NumberFormat.currency(symbol: '₹', decimalDigits: 2);
     final theme = Theme.of(context);
 
     return Scaffold(
@@ -84,10 +86,12 @@ class _DashboardTab extends ConsumerWidget {
         actions: [
           IconButton(
             icon: const Icon(Icons.search),
+            tooltip: 'Search',
             onPressed: () => context.push('/search'),
           ),
           IconButton(
             icon: const Icon(Icons.settings_outlined),
+            tooltip: 'Settings',
             onPressed: () => context.push('/settings'),
           ),
         ],
@@ -97,12 +101,12 @@ class _DashboardTab extends ConsumerWidget {
         children: [
           // Time-of-day greeting with display name (Welcome Experience)
           const _GreetingHeader(),
-          const SizedBox(height: 12),
-          // Net worth card
+          const SizedBox(height: 16),
+          // Net worth hero card
           accountsAsync.when(
             loading: () => const Card(
               child: SizedBox(
-                height: 100,
+                height: 140,
                 child: Center(child: CircularProgressIndicator()),
               ),
             ),
@@ -112,36 +116,9 @@ class _DashboardTab extends ConsumerWidget {
                 0,
                 (sum, a) => sum + a.currentBalance.subunits,
               );
-              return Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(20),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Total Balance',
-                        style: theme.textTheme.bodyMedium?.copyWith(
-                          color: theme.colorScheme.onSurfaceVariant,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        fmt.format(netWorth / 100),
-                        style: theme.textTheme.headlineLarge?.copyWith(
-                          fontWeight: FontWeight.bold,
-                          color: netWorth >= 0
-                              ? theme.colorScheme.primary
-                              : theme.colorScheme.error,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        '${accounts.length} account(s)',
-                        style: theme.textTheme.bodySmall,
-                      ),
-                    ],
-                  ),
-                ),
+              return _NetWorthHeroCard(
+                netWorthPaise: netWorth,
+                accountCount: accounts.length,
               );
             },
           ),
@@ -167,7 +144,8 @@ class _DashboardTab extends ConsumerWidget {
                     child: _SummaryCard(
                       label: 'Income',
                       amount: income / 100,
-                      color: Colors.green,
+                      color: AppTheme.incomeGreen,
+                      icon: Icons.arrow_downward_rounded,
                     ),
                   ),
                   const SizedBox(width: 12),
@@ -175,22 +153,29 @@ class _DashboardTab extends ConsumerWidget {
                     child: _SummaryCard(
                       label: 'Expense',
                       amount: expense / 100,
-                      color: theme.colorScheme.error,
+                      color: AppTheme.expenseRed,
+                      icon: Icons.arrow_upward_rounded,
                     ),
                   ),
                 ],
               );
             },
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 24),
 
           // Recent transactions header
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text('Recent', style: theme.textTheme.titleMedium),
-              TextButton(onPressed: () {}, child: const Text('See all')),
-            ],
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 4),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text('Recent', style: theme.textTheme.titleMedium),
+                TextButton(
+                  onPressed: onSeeAllTransactions,
+                  child: const Text('See all'),
+                ),
+              ],
+            ),
           ),
           txAsync.when(
             loading: () => const SizedBox.shrink(),
@@ -204,34 +189,132 @@ class _DashboardTab extends ConsumerWidget {
   }
 }
 
+/// Gradient hero card for the headline net worth figure (FA-002).
+/// On-gradient text is always white-on-brand; the figure never competes
+/// with surrounding surface cards.
+class _NetWorthHeroCard extends StatelessWidget {
+  final int netWorthPaise;
+  final int accountCount;
+
+  const _NetWorthHeroCard({
+    required this.netWorthPaise,
+    required this.accountCount,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final fmt = NumberFormat.currency(symbol: '₹', decimalDigits: 2);
+    final accountsLabel = accountCount == 1
+        ? '1 account'
+        : '$accountCount accounts';
+
+    return Container(
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        gradient: AppTheme.heroGradient(scheme),
+        borderRadius: BorderRadius.circular(AppTheme.radiusLarge),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                Icons.account_balance_wallet_outlined,
+                size: 18,
+                color: scheme.onPrimary.withValues(alpha: .85),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                'Total Balance',
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: scheme.onPrimary.withValues(alpha: .85),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            fmt.format(netWorthPaise / 100),
+            style: theme.textTheme.headlineLarge?.copyWith(
+              color: scheme.onPrimary,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            decoration: BoxDecoration(
+              color: scheme.onPrimary.withValues(alpha: .15),
+              borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
+            ),
+            child: Text(
+              accountsLabel,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: scheme.onPrimary,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Income/expense summary tile with a tinted icon chip (FA-003).
+/// Colors come from theme tokens — no raw Colors.* or hardcoded sizes.
 class _SummaryCard extends StatelessWidget {
   final String label;
   final double amount;
   final Color color;
+  final IconData icon;
 
   const _SummaryCard({
     required this.label,
     required this.amount,
     required this.color,
+    required this.icon,
   });
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     final fmt = NumberFormat.currency(symbol: '₹', decimalDigits: 2);
+
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        child: Row(
           children: [
-            Text(label, style: Theme.of(context).textTheme.bodySmall),
-            const SizedBox(height: 4),
-            Text(
-              fmt.format(amount),
-              style: TextStyle(
-                fontWeight: FontWeight.bold,
-                color: color,
-                fontSize: 16,
+            Container(
+              width: 38,
+              height: 38,
+              decoration: BoxDecoration(
+                color: color.withValues(alpha: .12),
+                borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
+              ),
+              child: Icon(icon, size: 20, color: color),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    label,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    fmt.format(amount),
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.titleMedium?.copyWith(color: color),
+                  ),
+                ],
               ),
             ),
           ],
@@ -241,9 +324,9 @@ class _SummaryCard extends StatelessWidget {
   }
 }
 
-/// Time-of-day-aware greeting with the user's display name.
-/// "Good morning, Shijith" — falls back to a nameless greeting if the
-/// name was skipped during onboarding.
+/// Time-of-day-aware greeting with the user's display name and today's
+/// date (FA-005). "Good morning, Shijith" — falls back to a nameless
+/// greeting if the name was skipped during onboarding.
 class _GreetingHeader extends ConsumerWidget {
   const _GreetingHeader();
 
@@ -258,16 +341,27 @@ class _GreetingHeader extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final nameAsync = ref.watch(displayNameProvider);
-    final greeting = _greetingFor(DateTime.now());
+    final now = DateTime.now();
+    final greeting = _greetingFor(now);
     final name = nameAsync.valueOrNull;
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 4),
-      child: Text(
-        name == null || name.isEmpty ? '$greeting!' : '$greeting, $name',
-        style: theme.textTheme.headlineSmall?.copyWith(
-          fontWeight: FontWeight.bold,
-        ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            name == null || name.isEmpty ? '$greeting!' : '$greeting, $name',
+            style: theme.textTheme.headlineSmall,
+          ),
+          const SizedBox(height: 2),
+          Text(
+            DateFormat('EEEE, d MMMM').format(now),
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ],
       ),
     );
   }
