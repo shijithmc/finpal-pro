@@ -121,7 +121,9 @@ fi
 step "3/5 — Build CDK project (dotnet build)"
 
 cd "$CDK_DIR/src"
-dotnet build --configuration Release --nologo -q || error "dotnet build failed"
+# --verbosity quiet, NOT -q: dotnet forwards -q to MSBuild as -question,
+# which errors whenever the build is not already up to date
+dotnet build --configuration Release --nologo --verbosity quiet || error "dotnet build failed"
 info "dotnet build: SUCCESS"
 cd "$CDK_DIR"
 
