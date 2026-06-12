@@ -1,29 +1,15 @@
-/// Contract for Cognito-backed mobile number + PIN authentication.
+/// Contract for Cognito-backed mobile number authentication.
 /// Infrastructure layer provides the implementation.
 abstract interface class IAuthService {
   /// Returns true if valid tokens are stored (user is logged in).
   Future<bool> isLoggedIn();
 
-  /// Signs in with a 10-digit Indian mobile number and a 6-digit PIN.
-  /// The PIN is verified server-side by Cognito (USER_PASSWORD_AUTH) —
-  /// no OTP is ever sent.
-  ///
-  /// Returns [SignInOutcome.userNotFound] when the number has no account yet
-  /// (caller should confirm the PIN and call [register]), and
-  /// [SignInOutcome.wrongPin] when the PIN does not match.
-  ///
-  /// Throws [AuthException] on network error or unexpected Cognito failure.
-  Future<SignInOutcome> signIn(String phoneNumber, String pin);
-
-  /// Registers a new account for [phoneNumber] with [pin] as the credential,
-  /// then signs in and stores tokens.
-  ///
-  /// Idempotent against races: if the number was registered concurrently,
-  /// falls back to signing in with [pin] and throws [AuthException]
-  /// (code `IncorrectPin`) when it does not match.
+  /// Signs in (or registers) the user with a 10-digit Indian mobile number.
+  /// Creates the Cognito user on first call; issues tokens via CUSTOM_AUTH
+  /// on every call — no OTP, no password verification.
   ///
   /// Throws [AuthException] on network error or Cognito failure.
-  Future<void> register(String phoneNumber, String pin);
+  Future<void> signIn(String phoneNumber);
 
   /// Clears all stored tokens and user identity from secure storage.
   Future<void> signOut();
@@ -40,18 +26,6 @@ abstract interface class IAuthService {
   /// Returns the last phone number used to sign in on this device, or null.
   /// Survives sign-out — powers the one-tap "Continue as" re-login.
   Future<String?> getLastUsedPhone();
-}
-
-/// Result of a [IAuthService.signIn] attempt.
-enum SignInOutcome {
-  /// Tokens issued and stored — user is signed in.
-  success,
-
-  /// No account exists for this phone number — confirm PIN and register.
-  userNotFound,
-
-  /// Account exists but the PIN did not match.
-  wrongPin,
 }
 
 /// Thrown when an authentication operation fails.
