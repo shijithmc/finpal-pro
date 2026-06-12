@@ -85,6 +85,11 @@ class _DashboardTab extends ConsumerWidget {
         title: const Text('FinPal Pro'),
         actions: [
           IconButton(
+            icon: const Icon(Icons.document_scanner_outlined),
+            tooltip: 'Scan a bill',
+            onPressed: () => context.push('/scan'),
+          ),
+          IconButton(
             icon: const Icon(Icons.search),
             tooltip: 'Search',
             onPressed: () => context.push('/search'),

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -8,6 +10,9 @@ import '../../../core/database/app_database.dart';
 import '../../../shared/widgets/amount_input_field.dart';
 import '../../accounts/application/providers.dart';
 import '../../accounts/domain/account.dart';
+import '../../ai_scan/application/providers.dart';
+import '../../ai_scan/domain/scan_prefill.dart';
+import '../../categories/application/providers.dart';
 import '../../categories/domain/category.dart';
 import '../../categories/presentation/category_picker_widget.dart';
 import '../application/providers.dart';
@@ -17,7 +22,11 @@ class AddTransactionPage extends ConsumerStatefulWidget {
   /// Pre-fills the form from a bookmark template when provided.
   final TemplateData? template;
 
-  const AddTransactionPage({super.key, this.template});
+  /// Pre-fills the form from an AI bill scan when provided (PBI-016).
+  /// The user reviews and saves — the scan never writes the ledger itself.
+  final ScanPrefillData? scanPrefill;
+
+  const AddTransactionPage({super.key, this.template, this.scanPrefill});
 
   @override
   ConsumerState<AddTransactionPage> createState() => _AddTransactionPageState();
@@ -39,6 +48,10 @@ class _AddTransactionPageState extends ConsumerState<AddTransactionPage>
   bool _loading = false;
   String? _error;
 
+  /// True while the category shown was picked by AI and not yet confirmed
+  /// or changed by the user (drives the "AI" badge).
+  bool _aiCategorySuggested = false;
+
   @override
   void initState() {
     super.initState();
@@ -50,6 +63,15 @@ class _AddTransactionPageState extends ConsumerState<AddTransactionPage>
       _creditAccountId = t.creditAccountId;
       _descController.text = t.description;
       _notesController.text = t.notes ?? '';
+    }
+
+    final s = widget.scanPrefill;
+    if (s != null) {
+      _type = TransactionType.expense;
+      if (s.amountPaise != null) _amount = s.amountPaise! / 100.0;
+      if (s.merchant != null) _descController.text = s.merchant!;
+      if (s.billDate != null) _date = s.billDate!;
+      if (s.categoryId != null) _loadScanCategory(s.categoryId!);
     }
 
     final initialIndex = [
@@ -80,6 +102,43 @@ class _AddTransactionPageState extends ConsumerState<AddTransactionPage>
     _notesController.dispose();
     super.dispose();
   }
+
+  /// Resolves the AI-selected category id against the local category list.
+  /// A stale or unknown id silently leaves the picker empty.
+  Future<void> _loadScanCategory(String categoryId) async {
+    final category = await ref
+        .read(categoryRepositoryProvider)
+        .findById(categoryId);
+    if (mounted && category != null) {
+      setState(() {
+        _category = category;
+        _aiCategorySuggested = true;
+      });
+    }
+  }
+
+  /// Reports which AI-extracted fields the user corrected before saving —
+  /// fire-and-forget accuracy telemetry (issue #64 AC).
+  void _sendScanFeedback(int amountSubunits) {
+    final s = widget.scanPrefill;
+    if (s == null) return;
+    final correctedFields = <String>[
+      if (s.amountPaise != null && amountSubunits != s.amountPaise) 'amount',
+      if ((s.merchant ?? '') != _descController.text.trim()) 'merchant',
+      if (s.billDate != null && !_isSameDay(_date, s.billDate!)) 'date',
+      if (_category?.id != s.categoryId) 'category',
+    ];
+    if (correctedFields.isNotEmpty) {
+      unawaited(
+        ref
+            .read(scanServiceProvider)
+            .sendFeedback(scanId: s.scanId, correctedFields: correctedFields),
+      );
+    }
+  }
+
+  static bool _isSameDay(DateTime a, DateTime b) =>
+      a.year == b.year && a.month == b.month && a.day == b.day;
 
   Future<void> _pickDate() async {
     final picked = await showDatePicker(
@@ -120,6 +179,7 @@ class _AddTransactionPageState extends ConsumerState<AddTransactionPage>
           date: _date,
         ),
       );
+      _sendScanFeedback(amountSubunits);
       if (mounted) context.pop();
     } on ArgumentError catch (e) {
       setState(() => _error = e.message.toString());
@@ -138,6 +198,13 @@ class _AddTransactionPageState extends ConsumerState<AddTransactionPage>
     return Scaffold(
       appBar: AppBar(
         title: const Text('Add Transaction'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.document_scanner_outlined),
+            tooltip: 'Scan a bill',
+            onPressed: () => context.pushReplacement('/scan'),
+          ),
+        ],
         bottom: TabBar(
           controller: _tabController,
           tabs: const [
@@ -181,8 +248,11 @@ class _AddTransactionPageState extends ConsumerState<AddTransactionPage>
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // Amount
-            AmountInputField(onChanged: (v) => _amount = v),
+            // Amount (initialValue shows template / scan prefills)
+            AmountInputField(
+              initialValue: _amount,
+              onChanged: (v) => _amount = v,
+            ),
             const SizedBox(height: 16),
 
             // Account pickers
@@ -227,8 +297,39 @@ class _AddTransactionPageState extends ConsumerState<AddTransactionPage>
               ListTile(
                 contentPadding: EdgeInsets.zero,
                 leading: const Icon(Icons.label_outline),
-                title: Text(_category?.name ?? 'Select Category'),
-                subtitle: const Text('Tap to choose'),
+                title: Row(
+                  children: [
+                    Flexible(child: Text(_category?.name ?? 'Select Category')),
+                    if (_aiCategorySuggested) ...[
+                      const SizedBox(width: 8),
+                      Tooltip(
+                        message: 'Category suggested by AI — tap to change',
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 2,
+                          ),
+                          decoration: BoxDecoration(
+                            color: theme.colorScheme.primaryContainer,
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(
+                            'AI',
+                            style: theme.textTheme.labelSmall?.copyWith(
+                              color: theme.colorScheme.onPrimaryContainer,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+                subtitle: Text(
+                  _aiCategorySuggested
+                      ? 'AI suggestion — tap to confirm or change'
+                      : 'Tap to choose',
+                ),
                 trailing: const Icon(Icons.chevron_right),
                 onTap: () async {
                   final selected = await showCategoryPicker(
@@ -239,7 +340,11 @@ class _AddTransactionPageState extends ConsumerState<AddTransactionPage>
                     selectedId: _category?.id,
                   );
                   if (selected != null || _category != null) {
-                    setState(() => _category = selected);
+                    setState(() {
+                      _category = selected;
+                      // Any manual pick confirms or replaces the AI choice.
+                      _aiCategorySuggested = false;
+                    });
                   }
                 },
                 tileColor: theme.colorScheme.surfaceContainerHighest,

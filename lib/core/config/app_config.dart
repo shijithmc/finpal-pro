@@ -27,4 +27,15 @@ abstract final class AppConfig {
     'COGNITO_CLIENT_ID',
     defaultValue: '',
   );
+
+  /// Backend HTTP API base URL, no trailing slash
+  /// (e.g. "https://abc123.execute-api.ap-south-1.amazonaws.com").
+  /// Passed as --dart-define=API_BASE_URL=... — read ApiEndpointOutput from
+  /// cdk-outputs.json after CDK deploy.
+  /// Empty → AI bill scan reports "service not configured"; the rest of the
+  /// app is offline-first and unaffected.
+  static const apiBaseUrl = String.fromEnvironment(
+    'API_BASE_URL',
+    defaultValue: '',
+  );
 }
