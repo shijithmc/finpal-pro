@@ -203,7 +203,16 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.e);
 
   static QueryExecutor _openConnection() {
-    return driftDatabase(name: 'finpal_db');
+    // The web options are ignored on native platforms. The two assets live in
+    // web/ and must stay version-matched to pubspec.lock: sqlite3.wasm from
+    // the sqlite3.dart release, drift_worker.js from the drift release.
+    return driftDatabase(
+      name: 'finpal_db',
+      web: DriftWebOptions(
+        sqlite3Wasm: Uri.parse('sqlite3.wasm'),
+        driftWorker: Uri.parse('drift_worker.js'),
+      ),
+    );
   }
 
   @override
