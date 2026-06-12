@@ -181,17 +181,21 @@ command -v python3 &>/dev/null && PYTHON_CMD="python3"
 
 if [[ -n "$PYTHON_CMD" && -f "$OUTPUTS_FILE" ]]; then
   _get() { $PYTHON_CMD -c "import json,sys; d=json.load(open('$OUTPUTS_FILE')); print(d.get('$1',{}).get('$2',''))" 2>/dev/null; }
-  APP_URL=$(_get "FinpalDistribution" "DistributionDomainOutput")
-  API_URL=$(_get "FinpalFoundation"   "ApiEndpointOutput")
-  POOL_ID=$(_get "FinpalFoundation"   "UserPoolIdOutput")
-  CLIENT_ID=$(_get "FinpalFoundation" "UserPoolClientIdOutput")
-  TABLE=$(_get "FinpalFoundation"     "TableNameOutput")
+  APP_URL=$(_get "FinpalDistribution"    "DistributionDomainOutput")
+  CF_DIST_ID=$(_get "FinpalDistribution" "DistributionIdOutput")
+  WEB_BUCKET=$(_get "FinpalDistribution" "WebBucketOutput")
+  API_URL=$(_get "FinpalFoundation"      "ApiEndpointOutput")
+  POOL_ID=$(_get "FinpalFoundation"      "UserPoolIdOutput")
+  CLIENT_ID=$(_get "FinpalFoundation"    "UserPoolClientIdOutput")
+  TABLE=$(_get "FinpalFoundation"        "TableNameOutput")
   echo ""
-  [[ -n "$APP_URL"   ]] && info "  App URL         : $APP_URL"
-  [[ -n "$API_URL"   ]] && info "  API Endpoint    : $API_URL"
-  [[ -n "$POOL_ID"   ]] && info "  Cognito Pool ID : $POOL_ID"
-  [[ -n "$CLIENT_ID" ]] && info "  Cognito Client  : $CLIENT_ID"
-  [[ -n "$TABLE"     ]] && info "  DynamoDB Table  : $TABLE"
+  [[ -n "$APP_URL"    ]] && info "  App URL (CloudFront) : $APP_URL"
+  [[ -n "$API_URL"    ]] && info "  API Endpoint         : $API_URL"
+  [[ -n "$CF_DIST_ID" ]] && info "  CloudFront Dist ID   : $CF_DIST_ID"
+  [[ -n "$WEB_BUCKET" ]] && info "  Web S3 Bucket        : $WEB_BUCKET"
+  [[ -n "$POOL_ID"    ]] && info "  Cognito Pool ID      : $POOL_ID"
+  [[ -n "$CLIENT_ID"  ]] && info "  Cognito Client       : $CLIENT_ID"
+  [[ -n "$TABLE"      ]] && info "  DynamoDB Table       : $TABLE"
 elif [[ ! -f "$OUTPUTS_FILE" ]]; then
   warn "  cdk-outputs.json not found — URLs unavailable"
 else

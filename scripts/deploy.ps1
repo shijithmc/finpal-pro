@@ -131,16 +131,20 @@ if (Test-Path $OutputsFile) {
     try {
         $outputs   = Get-Content $OutputsFile -Raw | ConvertFrom-Json
         $AppUrl    = $outputs.'FinpalDistribution'.'DistributionDomainOutput'
+        $CfDistId  = $outputs.'FinpalDistribution'.'DistributionIdOutput'
+        $WebBucket = $outputs.'FinpalDistribution'.'WebBucketOutput'
         $ApiUrl    = $outputs.'FinpalFoundation'.'ApiEndpointOutput'
         $PoolId    = $outputs.'FinpalFoundation'.'UserPoolIdOutput'
         $ClientId  = $outputs.'FinpalFoundation'.'UserPoolClientIdOutput'
         $Table     = $outputs.'FinpalFoundation'.'TableNameOutput'
         Write-Host ""
-        if ($AppUrl)   { Write-Info "  App URL         : $AppUrl" }
-        if ($ApiUrl)   { Write-Info "  API Endpoint    : $ApiUrl" }
-        if ($PoolId)   { Write-Info "  Cognito Pool ID : $PoolId" }
-        if ($ClientId) { Write-Info "  Cognito Client  : $ClientId" }
-        if ($Table)    { Write-Info "  DynamoDB Table  : $Table" }
+        if ($AppUrl)    { Write-Info "  App URL (CloudFront) : $AppUrl" }
+        if ($ApiUrl)    { Write-Info "  API Endpoint         : $ApiUrl" }
+        if ($CfDistId)  { Write-Info "  CloudFront Dist ID   : $CfDistId" }
+        if ($WebBucket) { Write-Info "  Web S3 Bucket        : $WebBucket" }
+        if ($PoolId)    { Write-Info "  Cognito Pool ID      : $PoolId" }
+        if ($ClientId)  { Write-Info "  Cognito Client       : $ClientId" }
+        if ($Table)     { Write-Info "  DynamoDB Table       : $Table" }
     } catch {
         Write-Warn "  Could not parse cdk-outputs.json - run deploy-aws.ps1 to populate it"
     }
