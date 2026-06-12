@@ -10,7 +10,7 @@ namespace FinpalPro.Cdk
 {
     /// <summary>
     /// Foundation infrastructure for FinPal Pro backend:
-    ///   - Cognito User Pool (phone-number CUSTOM_AUTH — no OTP, no password)
+    ///   - Cognito User Pool (phone number + 6-digit PIN via USER_PASSWORD_AUTH — no OTP)
     ///   - DynamoDB single-table (primary datastore)
     ///   - HTTP API Gateway (Lambda integration point, routes added per Sprint)
     /// </summary>
@@ -28,7 +28,7 @@ namespace FinpalPro.Cdk
 
             // ── Lambda: PreSignUp trigger ──────────────────────────────────────
             // Auto-confirms every new Cognito user without sending an OTP.
-            // Enables trust-on-first-use (TOFU): mobile number = identity.
+            // Identity = phone number; credential = 6-digit PIN (Cognito password).
             var preSignUpFn = new Function(this, "PreSignUpFn", new FunctionProps
             {
                 FunctionName = $"finpal-pre-signup-{env}",
@@ -45,31 +45,7 @@ namespace FinpalPro.Cdk
                 Description = "Auto-confirm Cognito users on sign-up without OTP verification.",
             });
 
-            // ── Lambda: DefineAuthChallenge trigger ────────────────────────────
-            // Issues tokens immediately on the first CUSTOM_AUTH call.
-            // No challenge is issued — mobile number alone authenticates.
-            var defineAuthChallengeFn = new Function(this, "DefineAuthChallengeFn", new FunctionProps
-            {
-                FunctionName = $"finpal-define-auth-challenge-{env}",
-                Runtime      = Runtime.NODEJS_20_X,
-                Handler      = "index.handler",
-                Code         = Code.FromInline(
-                    "exports.handler = async (event) => {\n" +
-                    "  if (event.request.session.length === 0) {\n" +
-                    "    event.response.issueTokens = true;\n" +
-                    "    event.response.failAuthentication = false;\n" +
-                    "  } else {\n" +
-                    "    event.response.issueTokens = false;\n" +
-                    "    event.response.failAuthentication = true;\n" +
-                    "  }\n" +
-                    "  return event;\n" +
-                    "};"
-                ),
-                Timeout     = Duration.Seconds(5),
-                Description = "CUSTOM_AUTH: issue tokens immediately without a challenge.",
-            });
-
-            // ── Cognito User Pool (Phone-based, TOFU) ──────────────────────────
+            // ── Cognito User Pool (Phone + PIN) ────────────────────────────────
             // NOTE: construct id changed "UserPool" → "UserPoolPhone" because
             // SignInAliases is an immutable CloudFormation property. CloudFormation
             // will create this new pool and retain the old one (RemovalPolicy.RETAIN).
@@ -89,18 +65,19 @@ namespace FinpalPro.Cdk
                     PhoneNumber = new StandardAttribute { Required = true, Mutable = true },
                 },
 
-                // Password policy kept to satisfy the signUp API contract.
-                // The password is never used for authentication (CUSTOM_AUTH only).
+                // The user's 6-digit PIN IS the Cognito password. MinLength 6 is
+                // the Cognito policy floor — the app enforces exactly 6 digits.
                 PasswordPolicy = new PasswordPolicy
                 {
-                    MinLength        = 8,
-                    RequireUppercase = true,
-                    RequireLowercase = true,
+                    MinLength        = 6,
+                    RequireUppercase = false,
+                    RequireLowercase = false,
                     RequireDigits    = true,
                     RequireSymbols   = false,
                 },
 
-                // MFA and account recovery are irrelevant with CUSTOM_AUTH.
+                // No SMS MFA (no-OTP product requirement); PIN recovery is a
+                // follow-up — no recovery channel exists without SMS/email.
                 Mfa             = Mfa.OFF,
                 AccountRecovery = AccountRecovery.NONE,
                 RemovalPolicy   = RemovalPolicy.RETAIN,
@@ -108,13 +85,13 @@ namespace FinpalPro.Cdk
                 // Attach trigger Lambdas.
                 LambdaTriggers = new UserPoolTriggers
                 {
-                    PreSignUp           = preSignUpFn,
-                    DefineAuthChallenge = defineAuthChallengeFn,
+                    PreSignUp = preSignUpFn,
                 },
             });
 
             // App client — Flutter app (public client, no secret).
-            // Only CUSTOM_AUTH is enabled; all password-based flows are disabled.
+            // USER_PASSWORD_AUTH carries the PIN; Cognito verifies it server-side
+            // with built-in escalating lockout on repeated failures.
             var userPoolClient = new UserPoolClient(this, "MobileAppClientV2", new UserPoolClientProps
             {
                 UserPool           = userPool,
@@ -122,11 +99,15 @@ namespace FinpalPro.Cdk
                 GenerateSecret     = false,   // Public client (Flutter app)
                 AuthFlows          = new AuthFlow
                 {
-                    UserPassword = false,  // Never allow plain-text password auth
-                    UserSrp      = false,  // SRP not used — CUSTOM_AUTH only
-                    Custom       = true,   // DefineAuthChallenge issues tokens immediately
+                    UserPassword = true,   // PIN sign-in (over TLS to Cognito)
+                    UserSrp      = false,  // SRP not used by the REST client
+                    Custom       = false,  // CUSTOM_AUTH retired with the TOFU flow
                 },
-                PreventUserExistenceErrors = true,
+                // OFF so the app can tell "no account" (UserNotFoundException →
+                // confirm-PIN registration) from "wrong PIN". SignUp already
+                // reveals existence via UsernameExistsException, so this adds
+                // no new enumeration surface.
+                PreventUserExistenceErrors = false,
                 AccessTokenValidity        = Duration.Hours(1),
                 IdTokenValidity            = Duration.Hours(1),
                 RefreshTokenValidity       = Duration.Days(30),
@@ -220,7 +201,7 @@ namespace FinpalPro.Cdk
             UserPoolId = new CfnOutput(this, "UserPoolIdOutput", new CfnOutputProps
             {
                 Value       = userPool.UserPoolId,
-                Description = "Cognito User Pool ID (phone-based CUSTOM_AUTH)",
+                Description = "Cognito User Pool ID (phone + PIN, USER_PASSWORD_AUTH)",
                 ExportName  = "FinpalUserPoolId",
             });
 

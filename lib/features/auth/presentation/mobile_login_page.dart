@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -7,23 +8,26 @@ import '../application/providers.dart';
 import '../domain/i_auth_service.dart';
 import 'indian_phone_formatter.dart';
 
-/// Branded mobile number login screen — premium welcome experience.
+/// Branded mobile number + PIN login screen — premium welcome experience.
 ///
 /// Visual design (issue #51):
 ///   - Full-screen deep-emerald gradient backdrop with soft glow shapes
 ///   - Brand mark + name + tagline over the gradient (WCAG AA contrast)
 ///   - Form lives in a floating surface card with large radius + soft shadow
-///   - Trust chips (Private / Instant / No OTP) above the fold
+///   - Trust chips (Private / PIN secured / No OTP) above the fold
 ///   - Staggered entrance: brand leads, card follows (reduced-motion aware)
 ///
-/// UX behaviour (issue #41 — unchanged):
-///   - Live 5+5 digit formatting (98765 43210)
-///   - Real-time validation: green check at a valid number, specific red
-///     error on an invalid first digit
-///   - Inline error banner with Retry — the typed number is never cleared
-///   - One-tap "Continue as" re-login with the masked last-used number
+/// UX behaviour:
+///   - Live 5+5 digit phone formatting (98765 43210)
+///   - 6-digit PIN field (obscured, digits only)
+///   - New number: sign-in reports userNotFound → the form flips to a
+///     confirm-PIN registration step; no account is created until the PIN
+///     is entered twice (there is no PIN recovery yet)
+///   - Inline error banner with Retry — typed values are never cleared
+///   - "Continue as" re-login keeps the last number, still asks for the PIN
 ///
-/// Auth model unchanged: Cognito CUSTOM_AUTH, no OTP, trust-on-first-use.
+/// Auth model (issue #55): Cognito USER_PASSWORD_AUTH — the PIN is the
+/// Cognito password, verified server-side. No OTP anywhere.
 class MobileLoginPage extends ConsumerStatefulWidget {
   const MobileLoginPage({super.key});
 
@@ -35,12 +39,20 @@ enum _PhoneFieldState { neutral, valid, invalid }
 
 class _MobileLoginPageState extends ConsumerState<MobileLoginPage> {
   final _controller = TextEditingController();
+  final _pinController = TextEditingController();
+  final _confirmPinController = TextEditingController();
   final _focusNode = FocusNode();
+  final _pinFocusNode = FocusNode();
 
   bool _loading = false;
   String? _bannerError;
   _PhoneFieldState _fieldState = _PhoneFieldState.neutral;
   String? _fieldError;
+  String? _confirmPinError;
+
+  /// True after sign-in reported userNotFound for the entered number —
+  /// the form shows the confirm-PIN registration step.
+  bool _newUserMode = false;
 
   /// Last number used on this device (raw 10 digits), if any.
   String? _lastPhone;
@@ -62,18 +74,26 @@ class _MobileLoginPageState extends ConsumerState<MobileLoginPage> {
   @override
   void dispose() {
     _controller.dispose();
+    _pinController.dispose();
+    _confirmPinController.dispose();
     _focusNode.dispose();
+    _pinFocusNode.dispose();
     super.dispose();
   }
 
   // ── Validation ───────────────────────────────────────────────────────────
 
   String get _digits => IndianPhoneFormatter.digitsOf(_controller.text);
+  String get _pin => _pinController.text;
+  String get _confirmPin => _confirmPinController.text;
+
+  bool get _pinComplete => RegExp(r'^\d{6}$').hasMatch(_pin);
 
   void _revalidate() {
     final digits = _digits;
     setState(() {
       _bannerError = null;
+      _confirmPinError = null;
       if (digits.length < 10) {
         _fieldState = _PhoneFieldState.neutral;
         _fieldError = null;
@@ -87,21 +107,64 @@ class _MobileLoginPageState extends ConsumerState<MobileLoginPage> {
     });
   }
 
-  bool get _canSubmit => !_loading && _fieldState == _PhoneFieldState.valid;
+  bool get _canSubmit =>
+      !_loading &&
+      _fieldState == _PhoneFieldState.valid &&
+      _pinComplete &&
+      (!_newUserMode || _confirmPin.length == 6);
+
+  bool get _canQuickSubmit => !_loading && _pinComplete;
 
   // ── Submit ───────────────────────────────────────────────────────────────
 
   Future<void> _submit([String? phoneOverride]) async {
     final phone = phoneOverride ?? _digits;
     if (phoneOverride == null && !_canSubmit) return;
+    if (phoneOverride != null && !_canQuickSubmit) return;
+
+    if (_newUserMode && _confirmPin != _pin) {
+      setState(() => _confirmPinError = 'PINs don\'t match — try again');
+      return;
+    }
 
     setState(() {
       _loading = true;
       _bannerError = null;
+      _confirmPinError = null;
     });
 
     try {
-      await ref.read(authServiceProvider).signIn(phone);
+      final authService = ref.read(authServiceProvider);
+
+      if (_newUserMode) {
+        await authService.register(phone, _pin);
+      } else {
+        final outcome = await authService.signIn(phone, _pin);
+        switch (outcome) {
+          case SignInOutcome.success:
+            break; // Fall through to navigation below.
+          case SignInOutcome.userNotFound:
+            // New number — flip to the confirm-PIN registration step. If we
+            // came from quick login, surface the phone in the entry form.
+            setState(() {
+              _newUserMode = true;
+              _loading = false;
+              if (phoneOverride != null) {
+                _controller.text =
+                    '${phone.substring(0, 5)} ${phone.substring(5)}';
+                _useDifferentNumber = true;
+                _revalidate();
+              }
+            });
+            return;
+          case SignInOutcome.wrongPin:
+            setState(() {
+              _bannerError = 'Incorrect PIN for this number — try again.';
+              _loading = false;
+            });
+            return;
+        }
+      }
 
       // Invalidate providers so the router picks up the new auth state.
       ref.invalidate(isLoggedInProvider);
@@ -190,11 +253,20 @@ class _MobileLoginPageState extends ConsumerState<MobileLoginPage> {
                                       _QuickLoginBlock(
                                         maskedPhone: _maskPhone(_lastPhone!),
                                         loading: _loading,
+                                        canContinue: _canQuickSubmit,
+                                        pinField: _buildPinField(
+                                          theme,
+                                          autofocus: true,
+                                          onSubmitted: () => _canQuickSubmit
+                                              ? _submit(_lastPhone)
+                                              : null,
+                                        ),
                                         onContinue: () => _submit(_lastPhone),
                                         onUseDifferent: () {
                                           setState(() {
                                             _useDifferentNumber = true;
                                             _bannerError = null;
+                                            _pinController.clear();
                                           });
                                         },
                                       )
@@ -243,14 +315,17 @@ class _MobileLoginPageState extends ConsumerState<MobileLoginPage> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Text(
-          'Enter your mobile number',
+          _newUserMode ? 'Create your PIN' : 'Sign in with your PIN',
           style: theme.textTheme.titleLarge?.copyWith(
             fontWeight: FontWeight.w700,
           ),
         ),
         const SizedBox(height: 4),
         Text(
-          'We\'ll sign you in instantly — no OTP, no password.',
+          _newUserMode
+              ? 'New number — confirm your 6-digit PIN to create your '
+                    'account. There\'s no PIN recovery yet, so remember it.'
+              : 'Your mobile number and 6-digit PIN — no OTP.',
           style: theme.textTheme.bodyMedium?.copyWith(
             color: scheme.onSurfaceVariant,
           ),
@@ -265,8 +340,8 @@ class _MobileLoginPageState extends ConsumerState<MobileLoginPage> {
             autofocus: true,
             keyboardType: TextInputType.phone,
             inputFormatters: [IndianPhoneFormatter()],
-            textInputAction: TextInputAction.done,
-            onFieldSubmitted: (_) => _canSubmit ? _submit() : null,
+            textInputAction: TextInputAction.next,
+            onFieldSubmitted: (_) => _pinFocusNode.requestFocus(),
             onChanged: (_) => _revalidate(),
             style: theme.textTheme.titleMedium?.copyWith(
               letterSpacing: 1.2,
@@ -316,6 +391,16 @@ class _MobileLoginPageState extends ConsumerState<MobileLoginPage> {
             ),
           ),
         ),
+        const SizedBox(height: 12),
+        _buildPinField(
+          theme,
+          onSubmitted: () =>
+              _newUserMode ? null : (_canSubmit ? _submit() : null),
+        ),
+        if (_newUserMode) ...[
+          const SizedBox(height: 12),
+          _buildConfirmPinField(theme),
+        ],
         const SizedBox(height: 20),
         AnimatedScale(
           scale: _canSubmit ? 1.0 : 0.98,
@@ -337,13 +422,85 @@ class _MobileLoginPageState extends ConsumerState<MobileLoginPage> {
                       color: scheme.onPrimary,
                     ),
                   )
-                : const Text(
-                    'Continue',
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                : Text(
+                    _newUserMode ? 'Create account' : 'Continue',
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
           ),
         ),
       ],
+    );
+  }
+
+  /// Obscured 6-digit PIN field — digits only, server-verified by Cognito.
+  Widget _buildPinField(
+    ThemeData theme, {
+    bool autofocus = false,
+    VoidCallback? onSubmitted,
+  }) {
+    return Semantics(
+      label: '6-digit PIN',
+      textField: true,
+      child: TextFormField(
+        controller: _pinController,
+        focusNode: autofocus ? null : _pinFocusNode,
+        autofocus: autofocus,
+        obscureText: true,
+        keyboardType: TextInputType.number,
+        inputFormatters: [
+          FilteringTextInputFormatter.digitsOnly,
+          LengthLimitingTextInputFormatter(6),
+        ],
+        textInputAction: _newUserMode
+            ? TextInputAction.next
+            : TextInputAction.done,
+        onFieldSubmitted: (_) => onSubmitted?.call(),
+        onChanged: (_) => _revalidate(),
+        style: theme.textTheme.titleMedium?.copyWith(
+          letterSpacing: 6,
+          fontWeight: FontWeight.w600,
+        ),
+        decoration: InputDecoration(
+          prefixIcon: const Icon(Icons.pin_outlined),
+          hintText: _newUserMode ? 'Choose a 6-digit PIN' : '6-digit PIN',
+          counterText: '',
+          enabled: !_loading,
+        ),
+      ),
+    );
+  }
+
+  /// Confirm-PIN field shown only in new-user registration mode.
+  Widget _buildConfirmPinField(ThemeData theme) {
+    return Semantics(
+      label: 'Confirm 6-digit PIN',
+      textField: true,
+      child: TextFormField(
+        controller: _confirmPinController,
+        obscureText: true,
+        keyboardType: TextInputType.number,
+        inputFormatters: [
+          FilteringTextInputFormatter.digitsOnly,
+          LengthLimitingTextInputFormatter(6),
+        ],
+        textInputAction: TextInputAction.done,
+        onFieldSubmitted: (_) => _canSubmit ? _submit() : null,
+        onChanged: (_) => _revalidate(),
+        style: theme.textTheme.titleMedium?.copyWith(
+          letterSpacing: 6,
+          fontWeight: FontWeight.w600,
+        ),
+        decoration: InputDecoration(
+          prefixIcon: const Icon(Icons.pin_outlined),
+          hintText: 'Confirm PIN',
+          errorText: _confirmPinError,
+          counterText: '',
+          enabled: !_loading,
+        ),
+      ),
     );
   }
 
@@ -513,7 +670,7 @@ class _TrustChips extends StatelessWidget {
       runSpacing: 8,
       children: [
         _TrustChip(icon: Icons.lock_outline, label: '100% private'),
-        _TrustChip(icon: Icons.bolt_outlined, label: 'Instant sign-in'),
+        _TrustChip(icon: Icons.pin_outlined, label: 'PIN secured'),
         _TrustChip(icon: Icons.verified_user_outlined, label: 'No OTP needed'),
       ],
     );
@@ -599,12 +756,16 @@ class _ErrorBanner extends StatelessWidget {
 class _QuickLoginBlock extends StatelessWidget {
   final String maskedPhone;
   final bool loading;
+  final bool canContinue;
+  final Widget pinField;
   final VoidCallback onContinue;
   final VoidCallback onUseDifferent;
 
   const _QuickLoginBlock({
     required this.maskedPhone,
     required this.loading,
+    required this.canContinue,
+    required this.pinField,
     required this.onContinue,
     required this.onUseDifferent,
   });
@@ -624,9 +785,19 @@ class _QuickLoginBlock extends StatelessWidget {
             fontWeight: FontWeight.w700,
           ),
         ),
+        const SizedBox(height: 4),
+        Text(
+          'Enter your PIN for +91 $maskedPhone',
+          textAlign: TextAlign.center,
+          style: theme.textTheme.bodyMedium?.copyWith(
+            color: scheme.onSurfaceVariant,
+          ),
+        ),
         const SizedBox(height: 20),
+        pinField,
+        const SizedBox(height: 16),
         FilledButton.icon(
-          onPressed: loading ? null : onContinue,
+          onPressed: canContinue ? onContinue : null,
           icon: loading
               ? SizedBox(
                   width: 18,

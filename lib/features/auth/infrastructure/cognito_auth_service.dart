@@ -8,9 +8,10 @@ import '../domain/i_auth_service.dart';
 
 /// Cognito-backed auth service using direct REST API calls.
 ///
-/// Auth model: CUSTOM_AUTH where the DefineAuthChallenge Lambda issues tokens
-/// immediately on the first call — no OTP, no password verification.
-/// Phone number is the sole identity factor (trust-on-first-use).
+/// Auth model: phone number + 6-digit PIN. The PIN is the Cognito password,
+/// verified server-side via USER_PASSWORD_AUTH — Cognito provides credential
+/// hashing and escalating lockout on repeated failures. No OTP is ever sent;
+/// the PreSignUp Lambda auto-confirms new users.
 ///
 /// Uses Cognito REST API directly (no AWS SDK dependency):
 ///   POST https://cognito-idp.{region}.amazonaws.com/
@@ -27,11 +28,6 @@ final class CognitoAuthService implements IAuthService {
 
   // Survives sign-out — powers the one-tap "Continue as" re-login.
   static const _lastPhoneKey = 'finpal_last_phone';
-
-  // Used for signUp only — never submitted for authentication.
-  // CUSTOM_AUTH does not verify this password; only the signUp call needs it
-  // to satisfy Cognito's password policy.
-  static const _signUpPassword = 'FinPalDev#2026';
 
   final FlutterSecureStorage _storage;
   final http.Client _httpClient;
@@ -53,23 +49,89 @@ final class CognitoAuthService implements IAuthService {
   }
 
   @override
-  Future<void> signIn(String phoneNumber) async {
+  Future<SignInOutcome> signIn(String phoneNumber, String pin) async {
     _validatePhone(phoneNumber);
+    _validatePin(pin);
 
     final phoneE164 = '+91$phoneNumber';
 
-    // Step 1 — Create the Cognito user if this is their first login.
-    // The PreSignUp Lambda auto-confirms and auto-verifies the phone number
-    // without sending any OTP.
-    await _ensureUserExists(phoneE164);
+    final response = await _initiateAuth(phoneE164, pin);
 
-    // Step 2 — Authenticate via CUSTOM_AUTH.
-    // The DefineAuthChallenge Lambda sets issueTokens=true immediately on the
-    // first call, so Cognito responds with AuthenticationResult (tokens).
-    final tokens = await _initiateCustomAuth(phoneE164);
+    if (response.statusCode == 200) {
+      final body = _parseBody(response.body);
+      await _storeTokens(_requireAuthResult(body), phoneNumber);
+      return SignInOutcome.success;
+    }
 
-    // Step 3 — Persist tokens to secure storage.
-    await _storeTokens(tokens, phoneNumber);
+    final body = _parseBody(response.body);
+    final type = body['__type'] as String? ?? '';
+
+    // PreventUserExistenceErrors is OFF on the app client specifically so
+    // this distinction is possible: new number → registration flow.
+    if (type == 'UserNotFoundException') return SignInOutcome.userNotFound;
+    if (type == 'NotAuthorizedException') return SignInOutcome.wrongPin;
+
+    throw AuthException(
+      body['message'] as String? ?? 'Authentication failed',
+      code: type.isEmpty ? 'AuthError' : type,
+    );
+  }
+
+  @override
+  Future<void> register(String phoneNumber, String pin) async {
+    _validatePhone(phoneNumber);
+    _validatePin(pin);
+
+    final phoneE164 = '+91$phoneNumber';
+
+    // Create the Cognito user with the PIN as the password. The PreSignUp
+    // Lambda auto-confirms and auto-verifies the phone — no OTP is sent.
+    final response = await _httpClient.post(
+      _endpoint,
+      headers: _headers('SignUp'),
+      body: jsonEncode({
+        'ClientId': AppConfig.cognitoClientId,
+        'Username': phoneE164,
+        'Password': pin,
+        'UserAttributes': [
+          {'Name': 'phone_number', 'Value': phoneE164},
+        ],
+      }),
+    );
+
+    if (response.statusCode != 200) {
+      final body = _parseBody(response.body);
+      final type = body['__type'] as String? ?? '';
+
+      // Registered concurrently (or stale userNotFound) — fall through and
+      // attempt sign-in with the provided PIN.
+      if (type != 'UsernameExistsException') {
+        throw AuthException(
+          body['message'] as String? ?? 'Registration failed',
+          code: type.isEmpty ? 'SignUpError' : type,
+        );
+      }
+    }
+
+    final authResponse = await _initiateAuth(phoneE164, pin);
+
+    if (authResponse.statusCode != 200) {
+      final body = _parseBody(authResponse.body);
+      final type = body['__type'] as String? ?? '';
+      if (type == 'NotAuthorizedException') {
+        throw const AuthException(
+          'This number is already registered with a different PIN.',
+          code: 'IncorrectPin',
+        );
+      }
+      throw AuthException(
+        body['message'] as String? ?? 'Authentication failed',
+        code: type.isEmpty ? 'AuthError' : type,
+      );
+    }
+
+    final body = _parseBody(authResponse.body);
+    await _storeTokens(_requireAuthResult(body), phoneNumber);
   }
 
   @override
@@ -106,70 +168,31 @@ final class CognitoAuthService implements IAuthService {
     'X-Amz-Target': 'AWSCognitoIdentityProviderService.$target',
   };
 
-  /// Creates the Cognito user if they don't exist yet.
-  /// Silently ignores UsernameExistsException.
-  Future<void> _ensureUserExists(String phoneE164) async {
-    final response = await _httpClient.post(
-      _endpoint,
-      headers: _headers('SignUp'),
-      body: jsonEncode({
-        'ClientId': AppConfig.cognitoClientId,
-        'Username': phoneE164,
-        'Password': _signUpPassword,
-        'UserAttributes': [
-          {'Name': 'phone_number', 'Value': phoneE164},
-        ],
-      }),
-    );
-
-    if (response.statusCode == 200) return; // Created successfully.
-
-    final body = _parseBody(response.body);
-    final type = body['__type'] as String? ?? '';
-
-    if (type == 'UsernameExistsException') return; // Already exists — OK.
-
-    throw AuthException(
-      body['message'] as String? ?? 'Sign-up failed',
-      code: type,
-    );
-  }
-
-  /// Calls InitiateAuth with CUSTOM_AUTH.
-  /// Returns the AuthenticationResult map with AccessToken / IdToken / RefreshToken.
-  Future<Map<String, dynamic>> _initiateCustomAuth(String phoneE164) async {
-    final response = await _httpClient.post(
+  /// Calls InitiateAuth with USER_PASSWORD_AUTH (PIN as password).
+  Future<http.Response> _initiateAuth(String phoneE164, String pin) {
+    return _httpClient.post(
       _endpoint,
       headers: _headers('InitiateAuth'),
       body: jsonEncode({
-        'AuthFlow': 'CUSTOM_AUTH',
-        'AuthParameters': {'USERNAME': phoneE164},
+        'AuthFlow': 'USER_PASSWORD_AUTH',
+        'AuthParameters': {'USERNAME': phoneE164, 'PASSWORD': pin},
         'ClientId': AppConfig.cognitoClientId,
       }),
     );
+  }
 
-    if (response.statusCode != 200) {
-      final body = _parseBody(response.body);
-      throw AuthException(
-        body['message'] as String? ?? 'Authentication failed',
-        code: body['__type'] as String? ?? 'AuthError',
-      );
-    }
-
-    final body = _parseBody(response.body);
-
-    // If DefineAuthChallenge issues tokens immediately, Cognito returns
-    // AuthenticationResult directly — no ChallengeName field.
+  /// Extracts AuthenticationResult or throws — USER_PASSWORD_AUTH with the
+  /// pool's config (no MFA, auto-confirmed users) never returns a challenge.
+  Map<String, dynamic> _requireAuthResult(Map<String, dynamic> body) {
     final authResult = body['AuthenticationResult'] as Map<String, dynamic>?;
     if (authResult == null) {
       final challenge = body['ChallengeName'] as String?;
       throw AuthException(
         'Unexpected challenge from Cognito: $challenge. '
-        'Check DefineAuthChallenge Lambda configuration.',
+        'Check the user pool MFA and app client configuration.',
         code: 'UnexpectedChallenge',
       );
     }
-
     return authResult;
   }
 
@@ -244,6 +267,16 @@ final class CognitoAuthService implements IAuthService {
       throw const AuthException(
         'Invalid mobile number: must start with 6–9',
         code: 'InvalidPhoneNumber',
+      );
+    }
+  }
+
+  /// Validates that [pin] is exactly 6 digits (Cognito password policy floor).
+  void _validatePin(String pin) {
+    if (!RegExp(r'^\d{6}$').hasMatch(pin)) {
+      throw const AuthException(
+        'PIN must be exactly 6 digits',
+        code: 'InvalidPin',
       );
     }
   }
