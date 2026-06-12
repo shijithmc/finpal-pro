@@ -1,8 +1,12 @@
+using System.Collections.Generic;
 using Amazon.CDK;
 using Amazon.CDK.AWS.Cognito;
 using Amazon.CDK.AWS.DynamoDB;
 using Amazon.CDK.AWS.Apigatewayv2;
+using Amazon.CDK.AwsApigatewayv2Authorizers;
+using Amazon.CDK.AwsApigatewayv2Integrations;
 using Amazon.CDK.AWS.Lambda;
+using Amazon.CDK.AWS.SecretsManager;
 using Amazon.CDK.AWS.SSM;
 using Constructs;
 
@@ -185,6 +189,80 @@ namespace FinpalPro.Cdk
                     MaxAge       = Duration.Days(1),
                 },
                 DisableExecuteApiEndpoint = false,
+            });
+
+            // ── AI Bill Scan (PBI-016, issues #61–#64) ─────────────────────────
+            // Gemini API key lives ONLY in Secrets Manager — never in the client.
+            // Created with a generated placeholder; set the real key post-deploy:
+            //   aws secretsmanager put-secret-value \
+            //     --secret-id finpal-pro/gemini-api-key-<env> \
+            //     --secret-string "<GEMINI_API_KEY>"
+            var geminiSecret = new Secret(this, "GeminiApiKeySecret", new SecretProps
+            {
+                SecretName  = $"finpal-pro/gemini-api-key-{env}",
+                Description = "Google Gemini API key for the AI bill scan proxy. " +
+                              "Placeholder until manually set — scans return 503 until then.",
+            });
+
+            // Scan proxy Lambda: authenticates via the JWT authorizer below,
+            // enforces the free-tier quota server-side, relays the image to
+            // Gemini, and never persists the image.
+            var scanFn = new Function(this, "AiScanFn", new FunctionProps
+            {
+                FunctionName = $"finpal-ai-scan-{env}",
+                Runtime      = Runtime.NODEJS_20_X,
+                Handler      = "index.handler",
+                Code         = Code.FromAsset("lambda/scan"),
+                MemorySize   = 512,
+                Timeout      = Duration.Seconds(30),
+                Description  = "AI bill scan proxy: quota enforcement + Gemini Vision relay (PBI-016).",
+                Environment  = new Dictionary<string, string>
+                {
+                    ["TABLE_NAME"]              = table.TableName,
+                    ["GEMINI_SECRET_ARN"]       = geminiSecret.SecretArn,
+                    ["GEMINI_MODEL"]            = "gemini-2.5-flash",
+                    ["FREE_SCAN_LIMIT"]         = "10",
+                    ["GLOBAL_MONTHLY_SCAN_CAP"] = "5000",
+                },
+            });
+
+            table.GrantReadWriteData(scanFn);
+            geminiSecret.GrantRead(scanFn);
+
+            // Cognito access tokens carry client_id (not aud) — the HTTP API JWT
+            // authorizer validates client_id against this audience list.
+            var scanAuthorizer = new HttpJwtAuthorizer(
+                "ScanJwtAuthorizer",
+                $"https://cognito-idp.{Region}.amazonaws.com/{userPool.UserPoolId}",
+                new HttpJwtAuthorizerProps
+                {
+                    JwtAudience = new[] { userPoolClient.UserPoolClientId },
+                });
+
+            var scanIntegration = new HttpLambdaIntegration("ScanIntegration", scanFn);
+
+            httpApi.AddRoutes(new AddRoutesOptions
+            {
+                Path        = "/v1/scan",
+                Methods     = new[] { Amazon.CDK.AWS.Apigatewayv2.HttpMethod.POST },
+                Integration = scanIntegration,
+                Authorizer  = scanAuthorizer,
+            });
+
+            httpApi.AddRoutes(new AddRoutesOptions
+            {
+                Path        = "/v1/scan/quota",
+                Methods     = new[] { Amazon.CDK.AWS.Apigatewayv2.HttpMethod.GET },
+                Integration = scanIntegration,
+                Authorizer  = scanAuthorizer,
+            });
+
+            httpApi.AddRoutes(new AddRoutesOptions
+            {
+                Path        = "/v1/scan/feedback",
+                Methods     = new[] { Amazon.CDK.AWS.Apigatewayv2.HttpMethod.POST },
+                Integration = scanIntegration,
+                Authorizer  = scanAuthorizer,
             });
 
             // ── SSM Parameters ─────────────────────────────────────────────────

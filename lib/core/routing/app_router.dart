@@ -4,6 +4,8 @@ import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
 import '../../features/accounts/presentation/account_form_page.dart';
+import '../../features/ai_scan/domain/scan_prefill.dart';
+import '../../features/ai_scan/presentation/scan_bill_page.dart';
 import '../../features/auth/application/providers.dart';
 import '../../features/auth/presentation/mobile_login_page.dart';
 import '../../features/backup/presentation/backup_page.dart';
@@ -55,10 +57,14 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/transactions/new',
         builder: (_, state) {
-          final template = state.extra as TemplateData?;
-          return AddTransactionPage(template: template);
+          final extra = state.extra;
+          return AddTransactionPage(
+            template: extra is TemplateData ? extra : null,
+            scanPrefill: extra is ScanPrefillData ? extra : null,
+          );
         },
       ),
+      GoRoute(path: '/scan', builder: (_, _) => const ScanBillPage()),
       GoRoute(
         path: '/accounts/new',
         builder: (_, _) => const AccountFormPage(),
