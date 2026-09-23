@@ -216,49 +216,92 @@ class AppDatabase extends _$AppDatabase {
   }
 
   @override
-  int get schemaVersion => 5;
+  int get schemaVersion => 6;
 
   @override
   MigrationStrategy get migration => buildMigrationStrategy(this);
 
   // ─── Transactions DAL ──────────────────────────────────────────────────────
 
-  /// Atomic double-entry write: inserts transaction + updates both account
-  /// balances + upserts monthly aggregate. Rolls back entirely on any error.
+  /// Atomically inserts a transaction and applies its ledger effects.
   Future<void> writeTransaction(
     TransactionsCompanion tx,
     String debitAccountId,
     String creditAccountId,
   ) => transaction(() async {
     await into(transactions).insert(tx);
+    final saved = await (select(
+      transactions,
+    )..where((t) => t.id.equals(tx.id.value))).getSingle();
+    await _applyTransactionEffects(saved);
+  });
 
-    final amount = tx.amount.value;
-    final date = DateTime.parse(tx.transactionDate.value);
+  /// Reverses the previous entry before applying the replacement, including
+  /// changes to amount, type, accounts, and accounting month.
+  Future<void> updateTransaction(String id, TransactionsCompanion changes) =>
+      transaction(() async {
+        final query = select(transactions)..where((t) => t.id.equals(id));
+        final previous = await query.getSingleOrNull();
+        if (previous == null) throw StateError('Transaction not found');
+        await (update(
+          transactions,
+        )..where((t) => t.id.equals(id))).write(changes);
+        final replacement = await query.getSingle();
+        await _applyTransactionEffects(previous, direction: -1);
+        await _applyTransactionEffects(replacement);
+      });
 
-    // Debit account: balance decreases by amount
-    await (update(accounts)..where((a) => a.id.equals(debitAccountId))).write(
-      AccountsCompanion.custom(
-        currentBalance: accounts.currentBalance - Variable(amount),
-      ),
-    );
+  Future<void> deleteTransaction(String id) => transaction(() async {
+    final previous = await (select(
+      transactions,
+    )..where((t) => t.id.equals(id))).getSingleOrNull();
+    if (previous == null) return;
+    await (delete(transactions)..where((t) => t.id.equals(id))).go();
+    await _applyTransactionEffects(previous, direction: -1);
+  });
 
-    // Credit account: balance increases by amount
-    await (update(accounts)..where((a) => a.id.equals(creditAccountId))).write(
-      AccountsCompanion.custom(
-        currentBalance: accounts.currentBalance + Variable(amount),
-      ),
-    );
-
-    // Pre-compute monthly aggregates
+  Future<void> _applyTransactionEffects(
+    TransactionData entry, {
+    int direction = 1,
+  }) async {
+    if (entry.amount <= 0) {
+      throw ArgumentError('Amount must be greater than zero');
+    }
+    if (entry.type == TransactionType.transfer &&
+        entry.debitAccountId == entry.creditAccountId) {
+      throw ArgumentError(
+        'Transfer source and destination accounts must differ',
+      );
+    }
+    final amount = entry.amount * direction;
+    final date = DateTime.parse(entry.transactionDate);
+    if (entry.type != TransactionType.income) {
+      await (update(
+        accounts,
+      )..where((a) => a.id.equals(entry.debitAccountId))).write(
+        AccountsCompanion.custom(
+          currentBalance: accounts.currentBalance - Variable(amount),
+        ),
+      );
+    }
+    if (entry.type != TransactionType.expense) {
+      await (update(
+        accounts,
+      )..where((a) => a.id.equals(entry.creditAccountId))).write(
+        AccountsCompanion.custom(
+          currentBalance: accounts.currentBalance + Variable(amount),
+        ),
+      );
+    }
     await _upsertMonthlyAggregates(
-      debitAccountId: debitAccountId,
-      creditAccountId: creditAccountId,
+      debitAccountId: entry.debitAccountId,
+      creditAccountId: entry.creditAccountId,
       amount: amount,
-      txType: tx.type.value,
+      txType: entry.type,
       year: date.year,
       month: date.month,
     );
-  });
+  }
   // FTS5 is kept in sync by the transactions_ai trigger in createFtsSchema().
 
   Future<void> _upsertMonthlyAggregates({
@@ -323,6 +366,17 @@ class AppDatabase extends _$AppDatabase {
   }
 
   // ─── Aggregate rebuild (used after restore) ───────────────────────────────
+
+  /// Repairs cached balances and aggregates from the authoritative ledger.
+  Future<void> rebuildLedgerTotals() => transaction(() async {
+    await update(
+      accounts,
+    ).write(AccountsCompanion.custom(currentBalance: accounts.openingBalance));
+    await delete(monthlyAggregates).go();
+    for (final entry in await select(transactions).get()) {
+      await _applyTransactionEffects(entry);
+    }
+  });
 
   /// Recomputes all monthly_aggregates from the transactions table.
   /// Called after a backup restore — do NOT call during normal writes.

@@ -1,10 +1,13 @@
 import '../../../core/database/app_database.dart';
 import 'transaction.dart';
+import 'transaction_search_filter.dart';
 
 abstract interface class ITransactionRepository {
   Stream<List<FinTransaction>> watchByDateRange(DateTime from, DateTime to);
 
   Future<List<FinTransaction>> searchByText(String query);
+
+  Stream<List<FinTransaction>> watchSearch(TransactionSearchFilter filter);
 
   Stream<List<FinTransaction>> watchBookmarked();
 

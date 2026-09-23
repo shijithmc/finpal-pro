@@ -9,7 +9,7 @@ import '../domain/i_security_service.dart';
 /// Biometric hardware service.
 ///
 /// PIN auth removed in schema v4 — see CognitoAuthService for login.
-/// This service is retained for biometric app-lock (Sprint 5, PBI-015).
+/// Used by the app lock gate on open and resume.
 final class BiometricSecurityService implements ISecurityService {
   final LocalAuthentication _localAuth;
   final AppDatabase _db;
@@ -22,9 +22,12 @@ final class BiometricSecurityService implements ISecurityService {
 
   @override
   Future<bool> isBiometricAvailable() async {
-    final canCheck = await _localAuth.canCheckBiometrics;
-    final isSupported = await _localAuth.isDeviceSupported();
-    return canCheck && isSupported;
+    try {
+      return await _localAuth.canCheckBiometrics &&
+          (await _localAuth.getAvailableBiometrics()).isNotEmpty;
+    } catch (_) {
+      return false;
+    }
   }
 
   @override
@@ -57,8 +60,29 @@ final class BiometricSecurityService implements ISecurityService {
 
   @override
   Future<void> setBiometricEnabled(bool enabled) async {
-    await (_db.update(_db.securityConfigs)
-          ..where((s) => s.id.equals(AppConstants.securityConfigRowId)))
-        .write(SecurityConfigsCompanion(biometricEnabled: Value(enabled)));
+    await _db
+        .into(_db.securityConfigs)
+        .insertOnConflictUpdate(
+          SecurityConfigsCompanion(
+            id: const Value(AppConstants.securityConfigRowId),
+            biometricEnabled: Value(enabled),
+          ),
+        );
+  }
+
+  @override
+  Future<void> setLockDelay(int seconds) async {
+    if (![0, 30, 300].contains(seconds)) {
+      throw ArgumentError('Unsupported lock delay');
+    }
+    await _db
+        .into(_db.securityConfigs)
+        .insertOnConflictUpdate(
+          SecurityConfigsCompanion(
+            id: const Value(AppConstants.securityConfigRowId),
+            lockOnBackground: const Value(true),
+            lockDelaySeconds: Value(seconds),
+          ),
+        );
   }
 }

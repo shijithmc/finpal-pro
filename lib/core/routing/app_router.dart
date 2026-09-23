@@ -4,6 +4,8 @@ import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
 import '../../features/accounts/presentation/account_form_page.dart';
+import '../../features/search/presentation/search_page.dart';
+import '../../features/security/presentation/security_settings_page.dart';
 import '../../features/ai_scan/domain/scan_prefill.dart';
 import '../../features/ai_scan/presentation/scan_bill_page.dart';
 import '../../features/auth/application/providers.dart';
@@ -64,6 +66,11 @@ final routerProvider = Provider<GoRouter>((ref) {
           );
         },
       ),
+      GoRoute(
+        path: '/transactions/:id',
+        builder: (_, state) =>
+            AddTransactionPage(transactionId: state.pathParameters['id']),
+      ),
       GoRoute(path: '/scan', builder: (_, _) => const ScanBillPage()),
       GoRoute(
         path: '/accounts/new',
@@ -74,11 +81,15 @@ final routerProvider = Provider<GoRouter>((ref) {
         builder: (_, state) =>
             AccountFormPage(accountId: state.pathParameters['id']),
       ),
-      GoRoute(path: '/search', builder: (_, _) => const _SearchPage()),
+      GoRoute(path: '/search', builder: (_, _) => const SearchPage()),
       GoRoute(
         path: '/settings',
         builder: (_, _) => const _SettingsPage(),
         routes: [
+          GoRoute(
+            path: 'security',
+            builder: (_, _) => const SecuritySettingsPage(),
+          ),
           GoRoute(path: 'backup', builder: (_, _) => const BackupPage()),
           GoRoute(path: 'budgets', builder: (_, _) => const BudgetPage()),
         ],
@@ -87,16 +98,6 @@ final routerProvider = Provider<GoRouter>((ref) {
     ],
   );
 });
-
-class _SearchPage extends StatelessWidget {
-  const _SearchPage();
-
-  @override
-  Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: const Text('Search')),
-    body: const Center(child: Text('Search — Sprint 3 (PBI-013)')),
-  );
-}
 
 class _SettingsPage extends ConsumerWidget {
   const _SettingsPage();
@@ -165,6 +166,14 @@ class _SettingsPage extends ConsumerWidget {
             subtitle: const Text('Spend breakdown and trends'),
             trailing: const Icon(Icons.chevron_right),
             onTap: () => context.push('/analytics'),
+          ),
+          const Divider(indent: 72),
+          ListTile(
+            leading: const Icon(Icons.lock_outline),
+            title: const Text('Security'),
+            subtitle: const Text('App lock and device authentication'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => context.push('/settings/security'),
           ),
           const Divider(indent: 72),
           // ── Sign out ────────────────────────────────────────────────────

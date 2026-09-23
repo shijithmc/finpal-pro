@@ -260,10 +260,10 @@ final class BackupService implements IBackupService {
               );
         }
       }
+      // Cached balances in older backups may be stale. Reconcile them from the
+      // restored ledger before committing so a failure restores the old data.
+      await _db.rebuildLedgerTotals();
     });
-
-    // Rebuild monthly aggregates from restored transactions.
-    await _rebuildMonthlyAggregates();
   }
 
   @override
@@ -295,9 +295,6 @@ final class BackupService implements IBackupService {
 
   String _escapeTsv(String value) =>
       value.replaceAll('\t', ' ').replaceAll('\n', ' ');
-
-  /// Reconstructs monthly_aggregates from transaction history after a restore.
-  Future<void> _rebuildMonthlyAggregates() => _db.rebuildAllMonthlyAggregates();
 }
 
 /// Riverpod provider for [BackupService].

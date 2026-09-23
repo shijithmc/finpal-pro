@@ -1,4 +1,7 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -7,23 +10,7 @@ import '../application/providers.dart';
 import '../domain/i_auth_service.dart';
 import 'indian_phone_formatter.dart';
 
-/// Branded mobile number login screen — premium welcome experience.
-///
-/// Visual design (issue #51):
-///   - Full-screen deep-emerald gradient backdrop with soft glow shapes
-///   - Brand mark + name + tagline over the gradient (WCAG AA contrast)
-///   - Form lives in a floating surface card with large radius + soft shadow
-///   - Trust chips (Private / Instant / No OTP) above the fold
-///   - Staggered entrance: brand leads, card follows (reduced-motion aware)
-///
-/// UX behaviour (issue #41 — unchanged):
-///   - Live 5+5 digit formatting (98765 43210)
-///   - Real-time validation: green check at a valid number, specific red
-///     error on an invalid first digit
-///   - Inline error banner with Retry — the typed number is never cleared
-///   - One-tap "Continue as" re-login with the masked last-used number
-///
-/// Auth model unchanged: Cognito CUSTOM_AUTH, no OTP, trust-on-first-use.
+/// Mobile number sign-in with a required SMS verification step.
 class MobileLoginPage extends ConsumerStatefulWidget {
   const MobileLoginPage({super.key});
 
@@ -36,6 +23,10 @@ enum _PhoneFieldState { neutral, valid, invalid }
 class _MobileLoginPageState extends ConsumerState<MobileLoginPage> {
   final _controller = TextEditingController();
   final _focusNode = FocusNode();
+  final _codeController = TextEditingController();
+  OtpChallenge? _challenge;
+  Timer? _resendTimer;
+  int _resendSeconds = 0;
 
   bool _loading = false;
   String? _bannerError;
@@ -61,6 +52,8 @@ class _MobileLoginPageState extends ConsumerState<MobileLoginPage> {
 
   @override
   void dispose() {
+    _resendTimer?.cancel();
+    _codeController.dispose();
     _controller.dispose();
     _focusNode.dispose();
     super.dispose();
@@ -93,7 +86,7 @@ class _MobileLoginPageState extends ConsumerState<MobileLoginPage> {
 
   Future<void> _submit([String? phoneOverride]) async {
     final phone = phoneOverride ?? _digits;
-    if (phoneOverride == null && !_canSubmit) return;
+    if (_loading || (phoneOverride == null && !_canSubmit)) return;
 
     setState(() {
       _loading = true;
@@ -101,23 +94,136 @@ class _MobileLoginPageState extends ConsumerState<MobileLoginPage> {
     });
 
     try {
-      await ref.read(authServiceProvider).signIn(phone);
-
-      // Invalidate providers so the router picks up the new auth state.
-      ref.invalidate(isLoggedInProvider);
-      ref.read(authStateChangedProvider.notifier).state++;
-
-      if (mounted) context.go('/');
+      final challenge = await ref
+          .read(authServiceProvider)
+          .requestSignIn(phone);
+      if (!mounted) return;
+      setState(() {
+        _challenge = challenge;
+        _codeController.clear();
+      });
+      _startResendTimer();
     } on AuthException catch (e) {
-      setState(() => _bannerError = e.message);
+      if (mounted) setState(() => _bannerError = e.message);
     } catch (_) {
-      setState(
-        () => _bannerError = 'Couldn\'t sign you in — check your connection.',
-      );
+      if (mounted) {
+        setState(
+          () =>
+              _bannerError = 'Could not send the code. Check your connection.',
+        );
+      }
     } finally {
       if (mounted) setState(() => _loading = false);
     }
   }
+
+  void _startResendTimer() {
+    _resendTimer?.cancel();
+    setState(() => _resendSeconds = 30);
+    _resendTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      setState(() => _resendSeconds--);
+      if (_resendSeconds == 0) timer.cancel();
+    });
+  }
+
+  Future<void> _verify() async {
+    final challenge = _challenge;
+    if (_loading || challenge == null) return;
+    setState(() {
+      _loading = true;
+      _bannerError = null;
+    });
+    try {
+      final next = await ref
+          .read(authServiceProvider)
+          .verifySignIn(challenge, _codeController.text.trim());
+      if (!mounted) return;
+      if (next != null) {
+        setState(() {
+          _challenge = next;
+          _codeController.clear();
+          _bannerError =
+              'Your number is verified. Enter the new SMS code to sign in.';
+        });
+        _startResendTimer();
+        return;
+      }
+      ref.invalidate(isLoggedInProvider);
+      ref.invalidate(currentUserIdProvider);
+      ref.read(authStateChangedProvider.notifier).state++;
+      context.go('/');
+    } on AuthException catch (e) {
+      if (mounted) setState(() => _bannerError = e.message);
+    } catch (_) {
+      if (mounted) {
+        setState(() => _bannerError = 'Could not verify the code. Try again.');
+      }
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Widget _buildCodeEntry(ThemeData theme) => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      Text('Verify your number', style: theme.textTheme.titleLarge),
+      const SizedBox(height: 8),
+      Text(
+        'Enter the code sent to +91 ${_maskPhone(_challenge!.phoneNumber)}.',
+      ),
+      const SizedBox(height: 20),
+      TextField(
+        controller: _codeController,
+        autofocus: true,
+        enabled: !_loading,
+        keyboardType: TextInputType.number,
+        autofillHints: const [AutofillHints.oneTimeCode],
+        inputFormatters: [
+          FilteringTextInputFormatter.digitsOnly,
+          LengthLimitingTextInputFormatter(8),
+        ],
+        decoration: const InputDecoration(
+          labelText: 'SMS code',
+          border: OutlineInputBorder(),
+        ),
+        onChanged: (_) => setState(() {}),
+        onSubmitted: (_) => _verify(),
+      ),
+      const SizedBox(height: 20),
+      FilledButton(
+        onPressed: _loading || _codeController.text.length < 6 ? null : _verify,
+        child: Text(_loading ? 'Verifying…' : 'Verify and sign in'),
+      ),
+      TextButton(
+        onPressed: _loading || _resendSeconds > 0
+            ? null
+            : () => _submit(_challenge!.phoneNumber),
+        child: Text(
+          _resendSeconds > 0
+              ? 'Resend code in ${_resendSeconds}s'
+              : 'Resend code',
+        ),
+      ),
+      TextButton(
+        onPressed: _loading
+            ? null
+            : () {
+                _resendTimer?.cancel();
+                setState(() {
+                  _challenge = null;
+                  _bannerError = null;
+                  _useDifferentNumber = true;
+                  _codeController.clear();
+                });
+              },
+        child: const Text('Use a different number'),
+      ),
+    ],
+  );
 
   // ── Build ────────────────────────────────────────────────────────────────
 
@@ -180,13 +286,17 @@ class _MobileLoginPageState extends ConsumerState<MobileLoginPage> {
                                     if (_bannerError != null) ...[
                                       _ErrorBanner(
                                         message: _bannerError!,
-                                        onRetry: showQuickLogin
+                                        onRetry: _loading || _challenge != null
+                                            ? null
+                                            : showQuickLogin
                                             ? () => _submit(_lastPhone)
                                             : (_canSubmit ? _submit : null),
                                       ),
                                       const SizedBox(height: 16),
                                     ],
-                                    if (showQuickLogin)
+                                    if (_challenge != null)
+                                      _buildCodeEntry(theme)
+                                    else if (showQuickLogin)
                                       _QuickLoginBlock(
                                         maskedPhone: _maskPhone(_lastPhone!),
                                         loading: _loading,
@@ -250,7 +360,7 @@ class _MobileLoginPageState extends ConsumerState<MobileLoginPage> {
         ),
         const SizedBox(height: 4),
         Text(
-          'We\'ll sign you in instantly — no OTP, no password.',
+          'We will send an SMS code to verify your number.',
           style: theme.textTheme.bodyMedium?.copyWith(
             color: scheme.onSurfaceVariant,
           ),
@@ -512,9 +622,12 @@ class _TrustChips extends StatelessWidget {
       spacing: 8,
       runSpacing: 8,
       children: [
-        _TrustChip(icon: Icons.lock_outline, label: '100% private'),
-        _TrustChip(icon: Icons.bolt_outlined, label: 'Instant sign-in'),
-        _TrustChip(icon: Icons.verified_user_outlined, label: 'No OTP needed'),
+        _TrustChip(icon: Icons.lock_outline, label: 'Private ledger'),
+        _TrustChip(icon: Icons.bolt_outlined, label: 'No password'),
+        _TrustChip(
+          icon: Icons.verified_user_outlined,
+          label: 'SMS verification',
+        ),
       ],
     );
   }
@@ -644,7 +757,7 @@ class _QuickLoginBlock extends StatelessWidget {
             ),
           ),
           label: Text(
-            'Continue as +91 $maskedPhone',
+            'Send code to +91 $maskedPhone',
             style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
           ),
         ),

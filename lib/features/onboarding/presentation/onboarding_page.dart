@@ -174,9 +174,25 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
     try {
       if (enable) {
         try {
-          await ref.read(securityServiceProvider).setBiometricEnabled(true);
+          final service = ref.read(securityServiceProvider);
+          if (!await service.authenticateWithBiometric()) {
+            if (mounted) {
+              setState(
+                () => _error =
+                    'Authentication was not completed. Try again or skip.',
+              );
+            }
+            return;
+          }
+          await service.setBiometricEnabled(true);
+          ref.invalidate(securityConfigProvider);
         } catch (_) {
-          // Biometric enrolment failed — continue without it.
+          if (mounted) {
+            setState(
+              () => _error = 'Could not enable app lock. Try again or skip.',
+            );
+          }
+          return;
         }
       }
       await _finish();

@@ -19,6 +19,9 @@ import '../application/providers.dart';
 import 'templates_page.dart' show TemplateData;
 
 class AddTransactionPage extends ConsumerStatefulWidget {
+  /// Loads an existing ledger entry for editing when provided.
+  final String? transactionId;
+
   /// Pre-fills the form from a bookmark template when provided.
   final TemplateData? template;
 
@@ -26,7 +29,12 @@ class AddTransactionPage extends ConsumerStatefulWidget {
   /// The user reviews and saves — the scan never writes the ledger itself.
   final ScanPrefillData? scanPrefill;
 
-  const AddTransactionPage({super.key, this.template, this.scanPrefill});
+  const AddTransactionPage({
+    super.key,
+    this.transactionId,
+    this.template,
+    this.scanPrefill,
+  });
 
   @override
   ConsumerState<AddTransactionPage> createState() => _AddTransactionPageState();
@@ -46,6 +54,9 @@ class _AddTransactionPageState extends ConsumerState<AddTransactionPage>
   Category? _category;
   DateTime _date = DateTime.now();
   bool _loading = false;
+  bool _initializing = false;
+  bool _transactionLoaded = false;
+  List<Account> _originalAccounts = [];
   String? _error;
 
   /// True while the category shown was picked by AI and not yet confirmed
@@ -83,16 +94,63 @@ class _AddTransactionPageState extends ConsumerState<AddTransactionPage>
     _tabController =
         TabController(length: 3, vsync: this, initialIndex: initialIndex)
           ..addListener(() {
+            final type = [
+              TransactionType.expense,
+              TransactionType.income,
+              TransactionType.transfer,
+            ][_tabController.index];
+            if (_type == type) return;
             setState(() {
-              _type = [
-                TransactionType.expense,
-                TransactionType.income,
-                TransactionType.transfer,
-              ][_tabController.index];
-              // Reset category on type change unless it was pre-filled.
-              if (widget.template == null) _category = null;
+              _type = type;
+              _category = null;
+              _aiCategorySuggested = false;
             });
           });
+    if (widget.transactionId != null) {
+      _initializing = true;
+      _loadTransaction();
+    }
+  }
+
+  Future<void> _loadTransaction() async {
+    try {
+      final entry = await ref
+          .read(transactionRepositoryProvider)
+          .findById(widget.transactionId!);
+      if (entry == null) throw StateError('Transaction not found');
+      final category = entry.categoryId == null
+          ? null
+          : await ref
+                .read(categoryRepositoryProvider)
+                .findById(entry.categoryId!);
+      final originals = <Account>[];
+      for (final id in {entry.debitAccountId, entry.creditAccountId}) {
+        final account = await ref.read(accountRepositoryProvider).findById(id);
+        if (account != null) originals.add(account);
+      }
+      if (!mounted) return;
+      setState(() {
+        _type = entry.type;
+        _tabController.index = [
+          TransactionType.expense,
+          TransactionType.income,
+          TransactionType.transfer,
+        ].indexOf(_type);
+        _amount = entry.amount.asMajorUnits;
+        _debitAccountId = entry.debitAccountId;
+        _creditAccountId = entry.creditAccountId;
+        _category = category;
+        _date = entry.transactionDate;
+        _descController.text = entry.description;
+        _notesController.text = entry.notes ?? '';
+        _originalAccounts = originals;
+        _transactionLoaded = true;
+      });
+    } catch (e) {
+      if (mounted) setState(() => _error = e.toString());
+    } finally {
+      if (mounted) setState(() => _initializing = false);
+    }
   }
 
   @override
@@ -141,17 +199,22 @@ class _AddTransactionPageState extends ConsumerState<AddTransactionPage>
       a.year == b.year && a.month == b.month && a.day == b.day;
 
   Future<void> _pickDate() async {
+    final earliest = DateTime(2000);
+    final latest = DateTime.now().add(const Duration(days: 1));
     final picked = await showDatePicker(
       context: context,
       initialDate: _date,
-      firstDate: DateTime(2000),
-      lastDate: DateTime.now().add(const Duration(days: 1)),
+      firstDate: _date.isBefore(earliest) ? _date : earliest,
+      lastDate: _date.isAfter(latest) ? _date : latest,
     );
     if (picked != null) setState(() => _date = picked);
   }
 
   Future<void> _save() async {
-    if (!_formKey.currentState!.validate()) return;
+    if (!(_formKey.currentState?.validate() ?? false)) return;
+    // Expense and income use one real account; the second FK mirrors it.
+    if (_type == TransactionType.expense) _creditAccountId = _debitAccountId;
+    if (_type == TransactionType.income) _debitAccountId = _creditAccountId;
     if (_debitAccountId == null || _creditAccountId == null) {
       setState(() => _error = 'Please select account(s)');
       return;
@@ -163,28 +226,33 @@ class _AddTransactionPageState extends ConsumerState<AddTransactionPage>
     });
 
     try {
-      final create = ref.read(createTransactionProvider);
       final amountSubunits = (_amount * AppConstants.currencySubunits).round();
-      await create(
-        CreateTransactionParams(
-          type: _type,
-          amountSubunits: amountSubunits,
-          debitAccountId: _debitAccountId!,
-          creditAccountId: _creditAccountId!,
-          categoryId: _category?.id,
-          description: _descController.text.trim(),
-          notes: _notesController.text.trim().isEmpty
-              ? null
-              : _notesController.text.trim(),
-          date: _date,
-        ),
+      final params = CreateTransactionParams(
+        type: _type,
+        amountSubunits: amountSubunits,
+        debitAccountId: _debitAccountId!,
+        creditAccountId: _creditAccountId!,
+        categoryId: _type == TransactionType.transfer ? null : _category?.id,
+        description: _descController.text.trim(),
+        notes: _notesController.text.trim().isEmpty
+            ? null
+            : _notesController.text.trim(),
+        date: _date,
       );
+      if (widget.transactionId == null) {
+        await ref.read(createTransactionProvider)(params);
+      } else {
+        await ref.read(updateTransactionProvider)(
+          widget.transactionId!,
+          params,
+        );
+      }
       _sendScanFeedback(amountSubunits);
       if (mounted) context.pop();
     } on ArgumentError catch (e) {
-      setState(() => _error = e.message.toString());
+      if (mounted) setState(() => _error = e.message.toString());
     } catch (e) {
-      setState(() => _error = e.toString());
+      if (mounted) setState(() => _error = e.toString());
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -197,13 +265,16 @@ class _AddTransactionPageState extends ConsumerState<AddTransactionPage>
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Add Transaction'),
+        title: Text(
+          widget.transactionId == null ? 'Add Transaction' : 'Edit Transaction',
+        ),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.document_scanner_outlined),
-            tooltip: 'Scan a bill',
-            onPressed: () => context.pushReplacement('/scan'),
-          ),
+          if (widget.transactionId == null)
+            IconButton(
+              icon: const Icon(Icons.document_scanner_outlined),
+              tooltip: 'Scan a bill',
+              onPressed: () => context.pushReplacement('/scan'),
+            ),
         ],
         bottom: TabBar(
           controller: _tabController,
@@ -214,16 +285,30 @@ class _AddTransactionPageState extends ConsumerState<AddTransactionPage>
           ],
         ),
       ),
-      body: accountsAsync.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text('Error: $e')),
-        data: (accounts) => _buildForm(accounts, theme),
-      ),
+      body: _initializing
+          ? const Center(child: CircularProgressIndicator())
+          : widget.transactionId != null && !_transactionLoaded
+          ? Center(child: Text(_error ?? 'Transaction not found'))
+          : accountsAsync.when(
+              loading: () => const Center(child: CircularProgressIndicator()),
+              error: (e, _) => Center(child: Text('Error: $e')),
+              data: (accounts) => _buildForm([
+                ...accounts,
+                for (final original in _originalAccounts)
+                  if (!accounts.any((a) => a.id == original.id)) original,
+              ], theme),
+            ),
       bottomNavigationBar: SafeArea(
         child: Padding(
           padding: const EdgeInsets.all(16),
           child: FilledButton(
-            onPressed: _loading ? null : _save,
+            onPressed:
+                _loading ||
+                    _initializing ||
+                    !accountsAsync.hasValue ||
+                    (widget.transactionId != null && !_transactionLoaded)
+                ? null
+                : _save,
             child: _loading
                 ? const SizedBox(
                     height: 20,
