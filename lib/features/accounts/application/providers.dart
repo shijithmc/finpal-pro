@@ -69,6 +69,25 @@ final createAccountProvider =
       };
     });
 
+final updateAccountProvider =
+    Provider<Future<void> Function(String, CreateAccountParams)>((ref) {
+      final repo = ref.read(accountRepositoryProvider);
+      return (id, params) async {
+        final error = Account.validate(name: params.name, sortOrder: 0);
+        if (error != null) throw ArgumentError(error);
+        await repo.update(
+          id,
+          AccountsCompanion(
+            name: Value(params.name.trim()),
+            type: Value(params.type),
+            openingBalance: Value(
+              Money.fromMajorUnits(params.openingBalanceMajor).subunits,
+            ),
+          ),
+        );
+      };
+    });
+
 final class CreateAccountParams {
   final String name;
   final AccountType type;

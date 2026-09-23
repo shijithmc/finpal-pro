@@ -43,6 +43,8 @@ jobs:
   # ── Flutter Web build (every PR / push) ─────────────────────────────────────
   build-web:
     name: Build Flutter Web
+    outputs:
+      otp_configured: ${{ steps.auth-config.outputs.ready }}
     needs: test
     runs-on: ubuntu-latest
 
@@ -66,8 +68,20 @@ jobs:
       - name: Generate Drift code
         run: dart run build_runner build --delete-conflicting-outputs
 
+      - name: Check OTP rollout readiness
+        id: auth-config
+        env:
+          OTP_CLIENT_ID: ${{ secrets.OTP_COGNITO_CLIENT_ID }}
+        run: |
+          if [ -n "$OTP_CLIENT_ID" ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "Web deployment waits for the SMS OTP migration and verified client configuration."
+          fi
+
       - name: Build Flutter Web
-        # COGNITO_POOL_ID, COGNITO_CLIENT_ID and API_BASE_URL must be set as
+        # COGNITO_POOL_ID, OTP_COGNITO_CLIENT_ID and API_BASE_URL must be set as
         # repository secrets. After CDK deploy, copy UserPoolIdOutput,
         # UserPoolClientIdOutput and ApiEndpointOutput from cdk-outputs.json
         # to GitHub Settings → Secrets.
@@ -76,7 +90,7 @@ jobs:
             --release \
             --dart-define=APP_ENV=production \
             --dart-define=COGNITO_POOL_ID=${{ secrets.COGNITO_POOL_ID }} \
-            --dart-define=COGNITO_CLIENT_ID=${{ secrets.COGNITO_CLIENT_ID }} \
+            --dart-define=COGNITO_CLIENT_ID=${{ secrets.OTP_COGNITO_CLIENT_ID }} \
             --dart-define=API_BASE_URL=${{ secrets.API_BASE_URL }}
 
       - name: Upload web artifact
@@ -90,9 +104,9 @@ jobs:
   # Runs on every push to main (continuous deploy) and on GitHub Release.
   deploy-web:
     name: Deploy Flutter Web to S3
-    needs: build-web
+    needs: [build-web, validate-infrastructure]
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main' || github.event_name == 'release'
+    if: (github.ref == 'refs/heads/main' || github.event_name == 'release') && needs.build-web.outputs.otp_configured == 'true'
 
     steps:
       - name: Download web artifact
@@ -153,12 +167,19 @@ jobs:
             --query "Parameter.Value" --output text)
           echo "App live at: https://${DOMAIN}"
 
-  # ── Deploy AWS infrastructure via CDK (release tag only) ─────────────────────
-  deploy-aws:
-    name: Deploy AWS Infrastructure (CDK)
-    needs: deploy-web
+  # ── Validate infrastructure without AWS credentials or deployment ───────────
+  # Infrastructure cutover is deliberate: follow scripts/SMS_AUTH.md.
+  validate-infrastructure:
+    name: Validate AWS Infrastructure
     runs-on: ubuntu-latest
-    if: github.event_name == 'release'
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    env:
+      APP_ENV: test
+      CDK_DEFAULT_ACCOUNT: "123456789012"
+      CDK_DEFAULT_REGION: ap-south-1
+      AWS_EC2_METADATA_DISABLED: "true"
 
     steps:
       - name: Checkout
@@ -169,30 +190,23 @@ jobs:
         with:
           dotnet-version: "8.0.x"
 
-      - name: Install CDK CLI
-        run: npm install -g aws-cdk
-
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ap-south-1
+          node-version: "24"
 
       - name: Build CDK project
-        run: dotnet build infrastructure/cdk/src --configuration Release --nologo -q
+        run: dotnet build infrastructure/cdk/src/Cdk/Cdk.csproj --configuration Release --nologo
 
-      - name: CDK deploy (all stacks)
-        run: cdk deploy --all --require-approval never --outputs-file cdk-outputs.json
+      - name: Test credential migration and deployment guard
+        run: node --test scripts/migrate-sms-auth.test.mjs infrastructure/cdk/test/auth-migration-guard.test.mjs
+
+      - name: Synthesize locked-stage templates locally
         working-directory: infrastructure/cdk
         env:
-          APP_ENV: production
-          CDK_DEFAULT_ACCOUNT: ${{ secrets.AWS_ACCOUNT_ID }}
-          CDK_DEFAULT_REGION: ap-south-1
+          AUTH_STAGE: locked
+          CDK_OUTDIR: cdk.out
+        run: dotnet run --project src/Cdk/Cdk.csproj --configuration Release --no-build
 
-      - name: Upload CDK outputs
-        uses: actions/upload-artifact@v4
-        with:
-          name: cdk-outputs-${{ github.event.release.tag_name }}
-          path: infrastructure/cdk/cdk-outputs.json
-          retention-days: 90
+      - name: Check synthesized authentication configuration
+        run: node --test infrastructure/cdk/test/auth-template.test.mjs

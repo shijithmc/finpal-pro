@@ -12,16 +12,30 @@ import 'package:http/testing.dart';
 
 final class _FakeAuthService implements IAuthService {
   final String? token;
-  const _FakeAuthService({this.token});
+  final AuthException? failure;
+  const _FakeAuthService({this.token, this.failure});
 
   @override
-  Future<String?> getAccessToken() async => token;
+  Future<String?> getAccessToken() async {
+    if (failure != null) throw failure!;
+    return token;
+  }
 
   @override
   Future<bool> isLoggedIn() async => token != null;
 
   @override
-  Future<void> signIn(String phoneNumber) async {}
+  Future<OtpChallenge> requestSignIn(String phoneNumber) async => OtpChallenge(
+    phoneNumber: phoneNumber,
+    username: phoneNumber,
+    kind: OtpChallengeKind.signIn,
+  );
+
+  @override
+  Future<OtpChallenge?> verifySignIn(
+    OtpChallenge challenge,
+    String code,
+  ) async => null;
 
   @override
   Future<void> signOut() async {}
@@ -69,6 +83,27 @@ Future<ScanResult> _scan(ApiScanService service) {
 }
 
 void main() {
+  test('refresh outage becomes a scan network error before request', () async {
+    final service = ApiScanService(
+      authService: const _FakeAuthService(
+        failure: AuthException('Offline', code: 'NetworkError'),
+      ),
+      client: MockClient(
+        (_) async => throw StateError('Must not call scan API'),
+      ),
+      baseUrl: _baseUrl,
+    );
+    await expectLater(
+      _scan(service),
+      throwsA(
+        isA<ScanException>().having(
+          (e) => e.code,
+          'code',
+          ScanFailureCode.network,
+        ),
+      ),
+    );
+  });
   group('ApiScanService.scanBill', () {
     test('scanBill_success_returnsParsedResultAndSendsAuthHeader', () async {
       late http.Request captured;

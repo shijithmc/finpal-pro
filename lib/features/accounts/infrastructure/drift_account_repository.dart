@@ -59,26 +59,39 @@ final class DriftAccountRepository implements IAccountRepository {
   }
 
   @override
-  Future<void> update(String id, AccountsCompanion companion) async {
-    if (companion.name.present) {
-      final name = companion.name.value;
-      final existing =
-          await (_db.select(_db.accounts)..where(
-                (a) =>
-                    a.name.lower().equals(name.toLowerCase()) &
-                    a.isArchived.equals(false) &
-                    a.id.isNotValue(id),
-              ))
-              .getSingleOrNull();
-      if (existing != null) {
-        throw DuplicateAccountNameException(name);
-      }
-    }
+  Future<void> update(String id, AccountsCompanion companion) =>
+      _db.transaction(() async {
+        final account = await findById(id);
+        if (account == null) throw StateError('Account not found');
+        if (companion.name.present) {
+          final name = companion.name.value;
+          final existing =
+              await (_db.select(_db.accounts)..where(
+                    (a) =>
+                        a.name.lower().equals(name.toLowerCase()) &
+                        a.isArchived.equals(false) &
+                        a.id.isNotValue(id),
+                  ))
+                  .getSingleOrNull();
+          if (existing != null) {
+            throw DuplicateAccountNameException(name);
+          }
+        }
 
-    await (_db.update(
-      _db.accounts,
-    )..where((a) => a.id.equals(id))).write(companion);
-  }
+        await (_db.update(
+          _db.accounts,
+        )..where((a) => a.id.equals(id))).write(companion);
+        if (companion.openingBalance.present) {
+          final adjustment =
+              companion.openingBalance.value - account.openingBalance.subunits;
+          await (_db.update(_db.accounts)..where((a) => a.id.equals(id))).write(
+            AccountsCompanion.custom(
+              currentBalance:
+                  _db.accounts.currentBalance + Variable(adjustment),
+            ),
+          );
+        }
+      });
 
   @override
   Future<void> archive(String id) async {

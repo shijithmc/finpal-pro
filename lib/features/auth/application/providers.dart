@@ -11,11 +11,13 @@ final authServiceProvider = Provider<IAuthService>((ref) {
 /// True if the user is currently logged in (has valid tokens in secure storage).
 /// Watched by the router to redirect unauthenticated users to /login.
 final isLoggedInProvider = FutureProvider<bool>((ref) async {
+  ref.watch(authStateChangedProvider);
   return ref.read(authServiceProvider).isLoggedIn();
 });
 
 /// The Cognito user ID of the currently signed-in user, or null.
 final currentUserIdProvider = FutureProvider<String?>((ref) async {
+  ref.watch(authStateChangedProvider);
   return ref.read(authServiceProvider).getCurrentUserId();
 });
 

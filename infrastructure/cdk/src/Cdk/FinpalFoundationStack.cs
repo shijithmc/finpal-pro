@@ -14,7 +14,7 @@ namespace FinpalPro.Cdk
 {
     /// <summary>
     /// Foundation infrastructure for FinPal Pro backend:
-    ///   - Cognito User Pool (phone-number CUSTOM_AUTH — no OTP, no password)
+    ///   - Cognito User Pool (native SMS one-time-password authentication)
     ///   - DynamoDB single-table (primary datastore)
     ///   - HTTP API Gateway (Lambda integration point, routes added per Sprint)
     /// </summary>
@@ -29,72 +29,42 @@ namespace FinpalPro.Cdk
             : base(scope, id, props)
         {
             var env = System.Environment.GetEnvironmentVariable("APP_ENV") ?? "dev";
+            var authStage = AuthMigrationGuard.Validate(Account, Region);
+            var otpEnabled = authStage == "otp";
 
-            // ── Lambda: PreSignUp trigger ──────────────────────────────────────
-            // Auto-confirms every new Cognito user without sending an OTP.
-            // Enables trust-on-first-use (TOFU): mobile number = identity.
-            var preSignUpFn = new Function(this, "PreSignUpFn", new FunctionProps
-            {
-                FunctionName = $"finpal-pre-signup-{env}",
-                Runtime      = Runtime.NODEJS_20_X,
-                Handler      = "index.handler",
-                Code         = Code.FromInline(
-                    "exports.handler = async (event) => {\n" +
-                    "  event.response.autoConfirmUser = true;\n" +
-                    "  event.response.autoVerifyPhone = true;\n" +
-                    "  return event;\n" +
-                    "};"
-                ),
-                Timeout     = Duration.Seconds(5),
-                Description = "Auto-confirm Cognito users on sign-up without OTP verification.",
-            });
-
-            // ── Lambda: DefineAuthChallenge trigger ────────────────────────────
-            // Issues tokens immediately on the first CUSTOM_AUTH call.
-            // No challenge is issued — mobile number alone authenticates.
-            var defineAuthChallengeFn = new Function(this, "DefineAuthChallengeFn", new FunctionProps
-            {
-                FunctionName = $"finpal-define-auth-challenge-{env}",
-                Runtime      = Runtime.NODEJS_20_X,
-                Handler      = "index.handler",
-                Code         = Code.FromInline(
-                    "exports.handler = async (event) => {\n" +
-                    "  if (event.request.session.length === 0) {\n" +
-                    "    event.response.issueTokens = true;\n" +
-                    "    event.response.failAuthentication = false;\n" +
-                    "  } else {\n" +
-                    "    event.response.issueTokens = false;\n" +
-                    "    event.response.failAuthentication = true;\n" +
-                    "  }\n" +
-                    "  return event;\n" +
-                    "};"
-                ),
-                Timeout     = Duration.Seconds(5),
-                Description = "CUSTOM_AUTH: issue tokens immediately without a challenge.",
-            });
-
-            // ── Cognito User Pool (Phone-based, TOFU) ──────────────────────────
-            // NOTE: construct id changed "UserPool" → "UserPoolPhone" because
-            // SignInAliases is an immutable CloudFormation property. CloudFormation
-            // will create this new pool and retain the old one (RemovalPolicy.RETAIN).
-            // After a successful CDK deploy, manually delete the old email-based
-            // pool from the AWS Console — it is no longer referenced by any stack.
+            // Keep this construct id and schema: existing users retain their sub.
+            // Cognito sends and verifies the SMS codes; no custom auth or
+            // auto-confirm/auto-verify Lambda can bypass proof of phone ownership.
             var userPool = new UserPool(this, "UserPoolPhone", new UserPoolProps
             {
                 UserPoolName      = $"finpal-pro-users-phone-{env}",
-                SelfSignUpEnabled = true,
+                SelfSignUpEnabled = otpEnabled,
+                FeaturePlan       = FeaturePlan.ESSENTIALS,
+                // Cognito requires PASSWORD in this policy. Legacy passwords
+                // must be randomized during the locked stage before USER_AUTH.
+                SignInPolicy = new SignInPolicy
+                {
+                    AllowedFirstAuthFactors = new AllowedFirstAuthFactors
+                    {
+                        Password = true,
+                        SmsOtp   = true,
+                    },
+                },
 
                 // Phone number is the only sign-in identifier.
                 SignInAliases = new SignInAliases { Phone = true, Username = false },
                 AutoVerify    = new AutoVerifiedAttrs { Phone = true },
+                KeepOriginal  = new KeepOriginalAttrs { Phone = true },
+                EnableSmsRole = true,
+                SnsRegion     = Region,
 
                 StandardAttributes = new StandardAttributes
                 {
                     PhoneNumber = new StandardAttribute { Required = true, Mutable = true },
                 },
 
-                // Password policy kept to satisfy the signUp API contract.
-                // The password is never used for authentication (CUSTOM_AUTH only).
+                // Preserve the existing pool policy. New app registrations omit
+                // Password; legacy shared passwords are retired before cutover.
                 PasswordPolicy = new PasswordPolicy
                 {
                     MinLength        = 8,
@@ -104,33 +74,30 @@ namespace FinpalPro.Cdk
                     RequireSymbols   = false,
                 },
 
-                // MFA and account recovery are irrelevant with CUSTOM_AUTH.
+                // SMS is the first factor. Required MFA is incompatible with OTP.
                 Mfa             = Mfa.OFF,
                 AccountRecovery = AccountRecovery.NONE,
                 RemovalPolicy   = RemovalPolicy.RETAIN,
-
-                // Attach trigger Lambdas.
-                LambdaTriggers = new UserPoolTriggers
-                {
-                    PreSignUp           = preSignUpFn,
-                    DefineAuthChallenge = defineAuthChallengeFn,
-                },
             });
 
-            // App client — Flutter app (public client, no secret).
-            // Only CUSTOM_AUTH is enabled; all password-based flows are disabled.
-            var userPoolClient = new UserPoolClient(this, "MobileAppClientV2", new UserPoolClientProps
+            // Rotate the app client to invalidate legacy refresh credentials and
+            // remove old client tokens from the HTTP API's accepted audience.
+            // The user pool, and therefore every existing user's sub, stays intact.
+            var userPoolClient = new UserPoolClient(this, "MobileOtpClient", new UserPoolClientProps
             {
                 UserPool           = userPool,
-                UserPoolClientName = $"finpal-pro-flutter-phone-{env}",
+                UserPoolClientName = $"finpal-pro-flutter-sms-otp-{env}",
                 GenerateSecret     = false,   // Public client (Flutter app)
                 AuthFlows          = new AuthFlow
                 {
-                    UserPassword = false,  // Never allow plain-text password auth
-                    UserSrp      = false,  // SRP not used — CUSTOM_AUTH only
-                    Custom       = true,   // DefineAuthChallenge issues tokens immediately
+                    User         = otpEnabled,
+                    UserPassword = false,
+                    UserSrp      = false,
+                    Custom       = false,
                 },
+                DisableOAuth               = true,
                 PreventUserExistenceErrors = true,
+                AuthSessionValidity        = Duration.Minutes(3),
                 AccessTokenValidity        = Duration.Hours(1),
                 IdTokenValidity            = Duration.Hours(1),
                 RefreshTokenValidity       = Duration.Days(30),
@@ -140,7 +107,19 @@ namespace FinpalPro.Cdk
                     {
                         PhoneNumber = true, PhoneNumberVerified = true,
                     }),
+                WriteAttributes = new ClientAttributes().WithStandardAttributes(
+                    new StandardAttributesMask { PhoneNumber = true }),
             });
+
+            // In the locked stage the replacement client cannot start sign-in.
+            // It has never issued refresh credentials. Keep its logical id stable
+            // so the OTP stage enables this same client after the migration.
+            if (!otpEnabled)
+            {
+                var cfnClient = (CfnUserPoolClient)userPoolClient.Node.DefaultChild;
+                cfnClient.AddPropertyOverride("ExplicitAuthFlows",
+                    new[] { "ALLOW_REFRESH_TOKEN_AUTH" });
+            }
 
             // ── DynamoDB Single-Table ──────────────────────────────────────────
             var table = new Table(this, "MainTable", new TableProps
@@ -270,7 +249,7 @@ namespace FinpalPro.Cdk
             {
                 ParameterName = "/finpal-pro/cognito/user-pool-id",
                 StringValue   = userPool.UserPoolId,
-                Description   = "FinPal Pro Cognito User Pool ID (phone-based CUSTOM_AUTH)",
+                Description   = "FinPal Pro Cognito User Pool ID (SMS OTP)",
             });
 
             new StringParameter(this, "UserPoolClientIdParam", new StringParameterProps
@@ -295,10 +274,16 @@ namespace FinpalPro.Cdk
             });
 
             // ── Outputs ────────────────────────────────────────────────────────
+            new CfnOutput(this, "AuthStageOutput", new CfnOutputProps
+            {
+                Value       = authStage,
+                Description = "Auth migration stage: locked or otp",
+            });
+
             UserPoolId = new CfnOutput(this, "UserPoolIdOutput", new CfnOutputProps
             {
                 Value       = userPool.UserPoolId,
-                Description = "Cognito User Pool ID (phone-based CUSTOM_AUTH)",
+                Description = "Cognito User Pool ID (SMS OTP)",
                 ExportName  = "FinpalUserPoolId",
             });
 

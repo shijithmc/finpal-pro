@@ -36,6 +36,14 @@ MigrationStrategy buildMigrationStrategy(AppDatabase db) {
       if (from < 5) {
         await m.createTable(db.userProfiles);
       }
+      // v5 → v6: repair ledger totals and index every existing transaction.
+      if (from < 6) {
+        await db.rebuildLedgerTotals();
+        await db.createFtsSchema();
+        await db.customStatement(
+          "INSERT INTO transactions_fts(transactions_fts) VALUES ('rebuild')",
+        );
+      }
     },
     beforeOpen: (details) async {
       await db.customStatement('PRAGMA foreign_keys = ON');

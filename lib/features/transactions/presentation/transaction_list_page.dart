@@ -18,6 +18,19 @@ class TransactionListPage extends ConsumerWidget {
 
     return Column(
       children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+          child: ListTile(
+            leading: const Icon(Icons.search),
+            title: const Text('Search transactions'),
+            trailing: const Icon(Icons.chevron_right),
+            tileColor: Theme.of(context).colorScheme.surfaceContainerHighest,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+            onTap: () => context.push('/search'),
+          ),
+        ),
         _MonthSelector(current: selectedMonth),
         Expanded(
           child: txAsync.when(
@@ -218,6 +231,7 @@ class _TransactionTile extends ConsumerWidget {
             ),
           ],
         ),
+        onTap: () => context.push('/transactions/${tx.id}'),
         onLongPress: () => ref
             .read(transactionRepositoryProvider)
             .toggleBookmark(tx.id, !tx.isBookmarked),

@@ -60,6 +60,7 @@ dist/
 
 # CDK build and deployment outputs
 cdk-outputs.json
+/auth-migration-receipt*.json
 infrastructure/cdk/cdk.out/
 infrastructure/cdk/src/Cdk/bin/
 infrastructure/cdk/src/Cdk/obj/

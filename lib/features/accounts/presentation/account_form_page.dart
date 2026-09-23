@@ -21,7 +21,38 @@ class _AccountFormPageState extends ConsumerState<AccountFormPage> {
   AccountType _type = AccountType.cash;
   double _openingBalance = 0;
   bool _loading = false;
+  bool _initializing = false;
+  bool _accountLoaded = false;
   String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.accountId != null) {
+      _initializing = true;
+      _loadAccount();
+    }
+  }
+
+  Future<void> _loadAccount() async {
+    try {
+      final account = await ref
+          .read(accountRepositoryProvider)
+          .findById(widget.accountId!);
+      if (!mounted) return;
+      if (account == null) throw StateError('Account not found');
+      setState(() {
+        _nameController.text = account.name;
+        _type = account.type;
+        _openingBalance = account.openingBalance.asMajorUnits;
+        _accountLoaded = true;
+      });
+    } catch (e) {
+      if (mounted) setState(() => _error = e.toString());
+    } finally {
+      if (mounted) setState(() => _initializing = false);
+    }
+  }
 
   @override
   void dispose() {
@@ -30,25 +61,27 @@ class _AccountFormPageState extends ConsumerState<AccountFormPage> {
   }
 
   Future<void> _save() async {
-    if (!_formKey.currentState!.validate()) return;
+    if (!(_formKey.currentState?.validate() ?? false)) return;
     setState(() {
       _loading = true;
       _error = null;
     });
     try {
-      final create = ref.read(createAccountProvider);
-      await create(
-        CreateAccountParams(
-          name: _nameController.text.trim(),
-          type: _type,
-          openingBalanceMajor: _openingBalance,
-        ),
+      final params = CreateAccountParams(
+        name: _nameController.text.trim(),
+        type: _type,
+        openingBalanceMajor: _openingBalance,
       );
+      if (widget.accountId == null) {
+        await ref.read(createAccountProvider)(params);
+      } else {
+        await ref.read(updateAccountProvider)(widget.accountId!, params);
+      }
       if (mounted) context.pop();
     } on ArgumentError catch (e) {
-      setState(() => _error = e.message.toString());
+      if (mounted) setState(() => _error = e.message.toString());
     } catch (e) {
-      setState(() => _error = e.toString());
+      if (mounted) setState(() => _error = e.toString());
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -61,64 +94,74 @@ class _AccountFormPageState extends ConsumerState<AccountFormPage> {
       appBar: AppBar(
         title: Text(widget.accountId == null ? 'New Account' : 'Edit Account'),
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Form(
-          key: _formKey,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              TextFormField(
-                controller: _nameController,
-                decoration: const InputDecoration(
-                  labelText: 'Account Name',
-                  border: OutlineInputBorder(),
+      body: _initializing
+          ? const Center(child: CircularProgressIndicator())
+          : widget.accountId != null && !_accountLoaded
+          ? Center(child: Text(_error ?? 'Account not found'))
+          : SingleChildScrollView(
+              padding: const EdgeInsets.all(16),
+              child: Form(
+                key: _formKey,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    TextFormField(
+                      controller: _nameController,
+                      decoration: const InputDecoration(
+                        labelText: 'Account Name',
+                        border: OutlineInputBorder(),
+                      ),
+                      validator: (v) {
+                        if (v == null || v.trim().isEmpty) {
+                          return 'Name is required';
+                        }
+                        return null;
+                      },
+                    ),
+                    const SizedBox(height: 16),
+                    DropdownButtonFormField<AccountType>(
+                      // ignore: deprecated_member_use
+                      value: _type,
+                      decoration: const InputDecoration(
+                        labelText: 'Account Type',
+                        border: OutlineInputBorder(),
+                      ),
+                      items: AccountType.values.map((t) {
+                        return DropdownMenuItem(
+                          value: t,
+                          child: Text(_typeLabel(t)),
+                        );
+                      }).toList(),
+                      onChanged: (v) => setState(() => _type = v!),
+                    ),
+                    const SizedBox(height: 16),
+                    AmountInputField(
+                      labelText: 'Opening Balance',
+                      initialValue: _openingBalance,
+                      onChanged: (v) => _openingBalance = v,
+                    ),
+                    if (_error != null) ...[
+                      const SizedBox(height: 12),
+                      Text(
+                        _error!,
+                        style: TextStyle(color: theme.colorScheme.error),
+                      ),
+                    ],
+                    const SizedBox(height: 24),
+                    FilledButton(
+                      onPressed: _loading ? null : _save,
+                      child: _loading
+                          ? const SizedBox(
+                              height: 20,
+                              width: 20,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Text('Save Account'),
+                    ),
+                  ],
                 ),
-                validator: (v) {
-                  if (v == null || v.trim().isEmpty) {
-                    return 'Name is required';
-                  }
-                  return null;
-                },
               ),
-              const SizedBox(height: 16),
-              DropdownButtonFormField<AccountType>(
-                // ignore: deprecated_member_use
-                value: _type,
-                decoration: const InputDecoration(
-                  labelText: 'Account Type',
-                  border: OutlineInputBorder(),
-                ),
-                items: AccountType.values.map((t) {
-                  return DropdownMenuItem(value: t, child: Text(_typeLabel(t)));
-                }).toList(),
-                onChanged: (v) => setState(() => _type = v!),
-              ),
-              const SizedBox(height: 16),
-              AmountInputField(
-                labelText: 'Opening Balance',
-                initialValue: _openingBalance,
-                onChanged: (v) => _openingBalance = v,
-              ),
-              if (_error != null) ...[
-                const SizedBox(height: 12),
-                Text(_error!, style: TextStyle(color: theme.colorScheme.error)),
-              ],
-              const SizedBox(height: 24),
-              FilledButton(
-                onPressed: _loading ? null : _save,
-                child: _loading
-                    ? const SizedBox(
-                        height: 20,
-                        width: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Text('Save Account'),
-              ),
-            ],
-          ),
-        ),
-      ),
+            ),
     );
   }
 

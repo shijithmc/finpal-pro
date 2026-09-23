@@ -121,7 +121,17 @@ final class ApiScanService implements IScanService {
   }
 
   Future<Map<String, String>> _authHeaders() async {
-    final token = await _auth.getAccessToken();
+    final String? token;
+    try {
+      token = await _auth.getAccessToken();
+    } on AuthException catch (e) {
+      throw ScanException(
+        e.code == 'NetworkError' || e.code == 'ServiceUnavailable'
+            ? ScanFailureCode.network
+            : ScanFailureCode.unauthorized,
+        e.message,
+      );
+    }
     if (token == null || token.isEmpty) {
       throw const ScanException(
         ScanFailureCode.unauthorized,

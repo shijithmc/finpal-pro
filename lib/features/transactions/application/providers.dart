@@ -72,6 +72,33 @@ final createTransactionProvider =
       };
     });
 
+final updateTransactionProvider =
+    Provider<Future<void> Function(String, CreateTransactionParams)>((ref) {
+      final repo = ref.read(transactionRepositoryProvider);
+      return (id, p) async {
+        final error = FinTransaction.validate(
+          amountSubunits: p.amountSubunits,
+          debitAccountId: p.debitAccountId,
+          creditAccountId: p.creditAccountId,
+          type: p.type,
+        );
+        if (error != null) throw ArgumentError(error);
+        await repo.update(
+          id,
+          TransactionsCompanion(
+            type: Value(p.type),
+            amount: Value(p.amountSubunits),
+            debitAccountId: Value(p.debitAccountId),
+            creditAccountId: Value(p.creditAccountId),
+            categoryId: Value(p.categoryId),
+            description: Value(p.description),
+            notes: Value(p.notes),
+            transactionDate: Value(p.date.toIso8601String().substring(0, 10)),
+          ),
+        );
+      };
+    });
+
 final class CreateTransactionParams {
   final TransactionType type;
   final int amountSubunits;

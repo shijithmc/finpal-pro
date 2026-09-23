@@ -1,5 +1,10 @@
 # FinPal Pro — Deployment Runbook
 
+> SMS authentication requires the staged migration in [SMS_AUTH.md](SMS_AUTH.md).
+> CDK synthesis now requires an explicit `AUTH_STAGE`; do not deploy the OTP app
+> before the backend cutover and real-device SMS checks. The mobile artifact
+> instructions below describe an older pipeline; current CI builds Flutter Web.
+
 ## Quick start
 
 ### Windows (PowerShell)
@@ -200,24 +205,27 @@ All resource IDs are also stored as SSM parameters under `/finpal-pro/...`.
 | `AWS_ACCESS_KEY_ID` | — | AWS credentials (or use `aws configure`) |
 | `AWS_SECRET_ACCESS_KEY` | — | AWS credentials |
 
-### CI/CD automatic deployment
+### CI validation and web deployment
 
-CDK deploys automatically when a **GitHub Release** is created (same trigger as the signed APK/AAB build). The CI job:
-1. Installs CDK CLI
-2. Runs `dotnet build` on the CDK project
-3. Runs `cdk deploy --all` with `APP_ENV=production`
+Every push, pull request, and published GitHub Release runs the `validate-infrastructure` job. It builds the CDK project, runs migration and deployment-guard tests, synthesizes the locked stage with a dummy account, and checks the emitted authentication configuration. This job uses no AWS credentials and makes no AWS changes.
 
-Required GitHub Secrets for AWS deployment:
+Infrastructure no longer deploys automatically on GitHub Release. Follow [SMS_AUTH.md](SMS_AUTH.md) for the deliberate backend migration and activation before publishing the OTP app.
+
+Flutter Web still builds on each run. S3/CloudFront deployment runs on `main` pushes and published releases only after `OTP_COGNITO_CLIENT_ID` is configured for the verified replacement client. The current workflow does not build or attach signed Android APK/AAB artifacts.
+
+GitHub Secrets used by web build/deployment:
 
 | Secret | Value |
 |--------|-------|
-| `AWS_ACCESS_KEY_ID` | `finpal-cdk-deployer` IAM user access key |
-| `AWS_SECRET_ACCESS_KEY` | `finpal-cdk-deployer` IAM user secret key |
-| `AWS_ACCOUNT_ID` | `018535004303` |
+| `COGNITO_POOL_ID` | Existing Cognito pool ID |
+| `OTP_COGNITO_CLIENT_ID` | Replacement client ID, set only after SMS rollout verification |
+| `API_BASE_URL` | Backend HTTP API endpoint |
+| `AWS_ACCESS_KEY_ID` | Principal authorized for web S3/CloudFront deployment and required SSM reads |
+| `AWS_SECRET_ACCESS_KEY` | Matching deployment credential |
 
-### IAM deployer — least-privilege setup
+### Historical CDK deployer reference
 
-CI credentials belong to the **`finpal-cdk-deployer`** IAM user:
+The original infrastructure deployer was the **`finpal-cdk-deployer`** IAM user. The configuration below is a reference for manual CDK deployments; verify its current permissions before use. It is not a statement that the current web CI has these permissions.
 
 ```
 ARN: arn:aws:iam::018535004303:user/finpal-cdk-deployer

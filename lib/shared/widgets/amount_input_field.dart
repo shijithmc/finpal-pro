@@ -74,9 +74,17 @@ class _AmountInputFieldState extends State<AmountInputField> {
             ),
             border: const OutlineInputBorder(),
           ),
+          validator: (value) {
+            if (value == null || value.trim().isEmpty) return null;
+            final amount = double.tryParse(value);
+            if (amount == null || !amount.isFinite) {
+              return 'Enter a valid amount';
+            }
+            return null;
+          },
           onChanged: (v) {
             final parsed = double.tryParse(v);
-            if (parsed != null) widget.onChanged(parsed);
+            widget.onChanged(parsed != null && parsed.isFinite ? parsed : 0);
           },
         ),
         if (_showCalc)

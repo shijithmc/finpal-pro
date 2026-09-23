@@ -1,7 +1,7 @@
 /// Contract for biometric hardware access.
 ///
 /// PIN auth removed in schema v4 — mobile number (Cognito) is the login method.
-/// This interface is retained for biometric app-lock (Sprint 5, PBI-015).
+/// Device authentication protects the local ledger on open and resume.
 abstract interface class ISecurityService {
   /// True if biometric hardware is available and enrolled on this device.
   Future<bool> isBiometricAvailable();
@@ -14,6 +14,9 @@ abstract interface class ISecurityService {
 
   /// Updates biometric-enabled flag.
   Future<void> setBiometricEnabled(bool enabled);
+
+  /// Re-lock after 0, 30 or 300 seconds in the background.
+  Future<void> setLockDelay(int seconds);
 }
 
 final class SecurityConfigSnapshot {
